@@ -1,0 +1,46 @@
+# Congestion Detection & Crowd Management Configuration
+
+traffic:
+  model_name: "yolov8n.pt"         # Nano model for fast CPU inference
+  confidence_threshold: 0.25
+  iou_threshold: 0.45
+  target_classes: [2, 3, 5, 7]      # COCO classes: 2=car, 3=motorcycle, 5=bus, 7=truck
+  class_names:
+    2: "Car"
+    3: "Motorcycle"
+    5: "Bus"
+    7: "Truck"
+  # Congestion Thresholds (Occupancy %)
+  occupancy_thresholds:
+    free_flow: 30.0     # LOS A/B
+    moderate: 65.0      # LOS C/D
+    congested: 80.0     # LOS E/F (Severe)
+  stationary_seconds_trigger: 5.0 # Vehicle stationary threshold for gridlock alert
+  car_count_threshold: 6         # Trigger diversion recommendation if cars > 6
+  frame_stride: 2                 # Process every Nth frame for smooth CPU FPS
+
+crowd:
+  model_name: "yolov8n.pt"
+  confidence_threshold: 0.25
+  person_class: 0                 # COCO class 0: Person
+  density_thresholds:             # People per square meter
+    normal: 1.5                   # Level Green: Free movement
+    warning: 3.0                  # Level Yellow: Crowd gathering, slow moving
+    critical: 4.5                 # Level Red: Dangerous surge / stampede hazard
+  heatmap_blur_radius: 25         # Gaussian blur radius for density heatmap
+  heatmap_alpha: 0.45             # Heatmap transparency overlay
+  frame_stride: 2
+
+routing:
+  default_city: "Kolkata, West Bengal, India"
+  congested_penalty_factor: 15.0  # Multiplier applied to congested road travel time
+  default_start_node: "J1_North"
+  default_end_node: "J3_South"
+  monitored_segment: ["J1_North", "J2_Central"]
+
+ui:
+  display_width: 1024
+  display_height: 576
+  show_heatmap: true
+  show_bounding_boxes: true
+  show_zone_stats: true

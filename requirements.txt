@@ -1,0 +1,21 @@
+# Web Server & Real-Time Dashboard
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+jinja2>=3.0.0
+python-multipart>=0.0.6
+
+# Core Computer Vision & Deep Learning (CPU friendly)
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Geospatial & Graph Routing
+networkx>=3.0
+shapely>=2.0.0
+folium>=0.14.0
+
+# Utilities
+pyyaml>=6.0
+tqdm>=4.65.0
+pytest>=7.0.0

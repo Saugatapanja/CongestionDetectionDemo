@@ -1,0 +1,51 @@
+{
+  "traffic": {
+    "road_roi": [
+      [112, 437],
+      [262, 162],
+      [537, 162],
+      [700, 437]
+    ],
+    "virtual_loop_line": [
+      [150, 325],
+      [650, 325]
+    ]
+  },
+  "crowd_pandal": {
+    "zones": [
+      {
+        "id": "entry_queue",
+        "name": "Barricade Entry Queue",
+        "area_sq_meters": 35.0,
+        "polygon": [
+          [31, 425],
+          [31, 200],
+          [212, 200],
+          [212, 425]
+        ]
+      },
+      {
+        "id": "main_sanctum",
+        "name": "Main Darshan Sanctum",
+        "area_sq_meters": 55.0,
+        "polygon": [
+          [225, 425],
+          [225, 125],
+          [575, 125],
+          [575, 425]
+        ]
+      },
+      {
+        "id": "exit_corridor",
+        "name": "Emergency Exit Corridor",
+        "area_sq_meters": 30.0,
+        "polygon": [
+          [587, 425],
+          [587, 187],
+          [775, 187],
+          [775, 425]
+        ]
+      }
+    ]
+  }
+}
