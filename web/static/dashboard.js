@@ -7,6 +7,7 @@
 let currentMode = "traffic";
 let isPolling = true;
 let lastMapRefresh = 0;
+let isVideoPaused = false;
 
 // Update Live Clock
 function updateClock() {
@@ -63,6 +64,12 @@ async function switchMode(mode, force = false) {
 function toggleVideoReload() {
   const feed = document.getElementById("videoFeed");
   const loading = document.getElementById("loadingOverlay");
+  if (isVideoPaused) {
+    isVideoPaused = false;
+    updateVideoPlaybackControls();
+    document.getElementById("pausedVideoFrame")?.classList.add("hidden");
+    feed?.classList.remove("hidden");
+  }
   if (loading) loading.classList.remove("hidden");
 
   // Detach previous stream to terminate stale connection immediately
@@ -78,6 +85,58 @@ function toggleVideoReload() {
       setTimeout(() => loading.classList.add("hidden"), 800);
     }
   }, 100);
+}
+
+function updateVideoPlaybackControls() {
+  const button = document.getElementById("videoPlaybackButton");
+  const icon = document.getElementById("videoPlaybackIcon");
+  const label = document.getElementById("videoPlaybackLabel");
+  if (!button || !icon || !label) return;
+
+  if (isVideoPaused) {
+    icon.className = "fa-solid fa-play";
+    label.innerText = "Play";
+    button.title = "Resume live AI video analysis";
+    button.classList.add("text-amber-300");
+  } else {
+    icon.className = "fa-solid fa-pause";
+    label.innerText = "Pause";
+    button.title = "Pause video at the current analyzed frame";
+    button.classList.remove("text-amber-300");
+  }
+}
+
+function toggleVideoPlayback() {
+  const feed = document.getElementById("videoFeed");
+  const pausedFrame = document.getElementById("pausedVideoFrame");
+  if (!feed || !pausedFrame) return;
+
+  if (!isVideoPaused) {
+    const frameWidth = feed.naturalWidth || feed.clientWidth;
+    const frameHeight = feed.naturalHeight || feed.clientHeight;
+    const context = pausedFrame.getContext("2d");
+    if (!context || !frameWidth || !frameHeight) return;
+
+    pausedFrame.width = frameWidth;
+    pausedFrame.height = frameHeight;
+    try {
+      context.drawImage(feed, 0, 0, frameWidth, frameHeight);
+    } catch (error) {
+      console.error("Could not capture the current video frame:", error);
+      return;
+    }
+    isVideoPaused = true;
+    feed.src = "";
+    feed.classList.add("hidden");
+    pausedFrame.classList.remove("hidden");
+  } else {
+    isVideoPaused = false;
+    pausedFrame.classList.add("hidden");
+    feed.classList.remove("hidden");
+    feed.src = `/video_feed?t=${Date.now()}`;
+  }
+
+  updateVideoPlaybackControls();
 }
 
 function refreshMap() {

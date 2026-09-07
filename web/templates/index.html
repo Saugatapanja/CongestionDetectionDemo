@@ -104,6 +104,10 @@
           <div class="flex items-center space-x-4 text-xs mono text-slate-400">
             <span>RES: <b class="text-slate-200">800x450</b></span>
             <span>INFERENCE: <b id="fpsValue" class="text-emerald-400">-- FPS</b></span>
+            <button id="videoPlaybackButton" onclick="toggleVideoPlayback()" class="hover:text-white flex items-center space-x-1" title="Pause video at the current analyzed frame">
+              <i id="videoPlaybackIcon" class="fa-solid fa-pause"></i>
+              <span id="videoPlaybackLabel">Pause</span>
+            </button>
             <button onclick="toggleVideoReload()" class="hover:text-white" title="Refresh Stream"><i class="fa-solid fa-arrows-rotate"></i></button>
           </div>
         </div>
@@ -111,6 +115,7 @@
         <!-- Video Player Viewport -->
         <div class="relative w-full aspect-video bg-black rounded-xl overflow-hidden flex items-center justify-center border border-slate-800 shadow-inner">
           <img id="videoFeed" src="/video_feed" alt="Live Stream" class="w-full h-full object-contain" />
+          <canvas id="pausedVideoFrame" class="hidden absolute inset-0 w-full h-full object-contain"></canvas>
           <div id="loadingOverlay" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur flex flex-col items-center justify-center space-y-3">
             <i class="fa-solid fa-circle-notch fa-spin text-3xl text-blue-500"></i>
             <span class="text-sm font-medium text-slate-300">Initializing Video Stream & AI Pipeline...</span>
@@ -407,6 +412,6 @@
   </div>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="/static/dashboard.js"></script>
+  <script src="/static/dashboard.js?v=2"></script>
 </body>
 </html>

@@ -95,3 +95,26 @@ def test_crowd_alert_system(tmp_path):
     assert repeated_alerts
     assert len(alert_sys.alert_history) == history_count
     assert os.path.exists(alert_sys.log_file)
+
+
+def test_crowd_alert_on_sanctum_headcount_increase(tmp_path):
+    alert_sys = CrowdAlertSystem(
+        log_file=str(tmp_path / "crowd_alerts.json"), alert_cooldown_sec=0.0
+    )
+
+    def sanctum_stats(head_count):
+        return [{
+            "id": "main_sanctum",
+            "name": "Main Sanctum",
+            "density_per_m2": head_count / 10,
+            "head_count": head_count,
+            "level": 2,
+        }]
+
+    assert not any(
+        "HOLD ENTRY" in alert["title"]
+        for alert in alert_sys.evaluate_safety_risks(sanctum_stats(5))
+    )
+    alerts = alert_sys.evaluate_safety_risks(sanctum_stats(7))
+
+    assert any("HOLD ENTRY" in alert["title"] for alert in alerts)

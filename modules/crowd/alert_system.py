@@ -4,7 +4,7 @@ from datetime import datetime
 import json
 import os
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 
 class CrowdAlertSystem:
@@ -49,7 +49,7 @@ class CrowdAlertSystem:
         # Check Main Sanctum / Idol viewing area
         if "main_sanctum" in zone_dict:
             sanctum = zone_dict["main_sanctum"]
-            if sanctum["level"] == 3:
+            if sanctum["level"] == 3 or sanctum["head_count"] > 5:
                 alert = {
                     "timestamp": timestamp_str,
                     "severity": "HIGH_ALERT",
