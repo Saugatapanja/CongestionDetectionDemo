@@ -26,6 +26,7 @@ import yaml
 
 from core.stream_loader import VideoStreamLoader
 from core.tracker import CentroidTracker
+from core.zone_profiles import crowd_zones, traffic_roi
 from modules.traffic.vehicle_detector import VehicleDetector
 from modules.traffic.congestion_meter import CongestionMeter
 from modules.traffic.route_recommender import RouteRecommender
@@ -69,10 +70,6 @@ def run_traffic_module(
     t_cfg = config.get("traffic", {})
     r_cfg = config.get("routing", {})
 
-    road_roi = zones.get("traffic", {}).get("road_roi")
-    if not road_roi:
-        road_roi = [[180, 560], [380, 240], [720, 240], [920, 560]]
-
     frame_stride = max(1, int(t_cfg.get("frame_stride", 2)))
     loader = VideoStreamLoader(
         source=video_source,
@@ -82,19 +79,24 @@ def run_traffic_module(
         loop=(not headless),
     )
 
+    road_roi, profile_overrides = traffic_roi(zones, video_source, loader.get_resolution())
+    effective_cfg = {**t_cfg, **profile_overrides}
     detector = VehicleDetector(
         model_name=t_cfg.get("model_name", "yolov8n.pt"),
-        confidence=t_cfg.get("confidence_threshold", 0.35),
+        confidence=effective_cfg.get("confidence_threshold", 0.35),
         target_classes=t_cfg.get("target_classes", [2, 3, 5, 7]),
     )
 
-    tracker = CentroidTracker(max_disappeared=20, max_distance=80.0)
+    processing_fps = loader.fps / frame_stride
+    tracker = CentroidTracker(max_disappeared=20, max_distance=80.0, fps=processing_fps)
     meter = CongestionMeter(
         road_roi=road_roi,
-        free_flow_thresh=t_cfg.get("occupancy_thresholds", {}).get("free_flow", 30.0),
-        moderate_thresh=t_cfg.get("occupancy_thresholds", {}).get("moderate", 65.0),
-        congested_thresh=t_cfg.get("occupancy_thresholds", {}).get("congested", 80.0),
-        fps=loader.fps / frame_stride,
+        free_flow_thresh=effective_cfg.get("occupancy_thresholds", {}).get("free_flow", 30.0),
+        moderate_thresh=effective_cfg.get("occupancy_thresholds", {}).get("moderate", 65.0),
+        congested_thresh=effective_cfg.get("occupancy_thresholds", {}).get("congested", 80.0),
+        stationary_sec_thresh=effective_cfg.get("stationary_seconds_trigger", 5.0),
+        car_threshold=effective_cfg.get("car_count_threshold", 10),
+        fps=processing_fps,
     )
 
     recommender = RouteRecommender(
@@ -246,8 +248,6 @@ def run_crowd_module(
 ):
     print(f"\n[INIT] Starting Overhead Pandal Crowd Monitoring Engine on: {video_source}")
     c_cfg = config.get("crowd", {})
-    zones_list = zones.get("crowd_pandal", {}).get("zones", [])
-
     frame_stride = max(1, int(c_cfg.get("frame_stride", 2)))
     loader = VideoStreamLoader(
         source=video_source,
@@ -257,18 +257,22 @@ def run_crowd_module(
         loop=(not headless),
     )
 
+    zones_list, profile_overrides = crowd_zones(zones, video_source, loader.get_resolution())
+    effective_cfg = {**c_cfg, **profile_overrides}
     detector = OverheadCrowdDetector(
         model_name=c_cfg.get("model_name", "yolov8n.pt"),
-        confidence=c_cfg.get("confidence_threshold", 0.25),
+        confidence=effective_cfg.get("confidence_threshold", 0.25),
+        imgsz=effective_cfg.get("inference_size", 960),
     )
 
     analyzer = PandalDensityAnalyzer(
         zones_config=zones_list,
-        normal_thresh=c_cfg.get("density_thresholds", {}).get("normal", 1.5),
-        warning_thresh=c_cfg.get("density_thresholds", {}).get("warning", 3.0),
-        critical_thresh=c_cfg.get("density_thresholds", {}).get("critical", 4.5),
-        blur_radius=c_cfg.get("heatmap_blur_radius", 35),
-        heatmap_alpha=c_cfg.get("heatmap_alpha", 0.45),
+        normal_thresh=effective_cfg.get("density_thresholds", {}).get("normal", 1.5),
+        warning_thresh=effective_cfg.get("density_thresholds", {}).get("warning", 3.0),
+        critical_thresh=effective_cfg.get("density_thresholds", {}).get("critical", 4.5),
+        blur_radius=effective_cfg.get("heatmap_blur_radius", 35),
+        heatmap_alpha=effective_cfg.get("heatmap_alpha", 0.45),
+        smoothing_window=effective_cfg.get("smoothing_window", 1),
     )
 
     alert_sys = CrowdAlertSystem(log_file="outputs/crowd_alerts.json")

@@ -47,5 +47,55 @@
         ]
       }
     ]
+  },
+  "video_profiles": {
+    "traffic": [
+      {
+        "filename": "Traffic Congestions 1_Gemini generated.mp4",
+        "reference_size": [1024, 576],
+        "road_roi": [[0, 55], [650, 35], [1024, 575], [0, 575]],
+        "overrides": {
+          "car_count_threshold": 16,
+          "stationary_seconds_trigger": 3.0
+        }
+      }
+    ],
+    "crowd": [
+      {
+        "filename": "Durga Puja Pandal Overcrowded_Gemini generated.mp4",
+        "reference_size": [1024, 576],
+        "overrides": {
+          "smoothing_window": 5,
+          "confidence_threshold": 0.12,
+          "inference_size": 1280
+        },
+        "zones": [
+          {
+            "id": "entry_queue",
+            "name": "Entry Queue / Left Barricade",
+            "area_sq_meters": 18.0,
+            "warning_count": 8,
+            "critical_count": 12,
+            "polygon": [[45, 285], [355, 285], [355, 575], [45, 575]]
+          },
+          {
+            "id": "main_sanctum",
+            "name": "Main Pandal Approach",
+            "area_sq_meters": 22.0,
+            "warning_count": 6,
+            "critical_count": 10,
+            "polygon": [[355, 155], [690, 155], [690, 575], [355, 575]]
+          },
+          {
+            "id": "exit_corridor",
+            "name": "Exit Corridor / Right Barricade",
+            "area_sq_meters": 20.0,
+            "warning_count": 8,
+            "critical_count": 12,
+            "polygon": [[690, 280], [920, 280], [920, 575], [690, 575]]
+          }
+        ]
+      }
+    ]
   }
 }

@@ -15,15 +15,20 @@ class OverheadCrowdDetector:
         self,
         model_name: str = "yolov8n.pt",
         confidence: float = 0.25,
+        imgsz: int = 960,
     ):
         """Initialize overhead crowd detector.
 
         Args:
-            model_name: YOLO model file (nano version for CPU).
+            model_name: YOLO detection model.  Use a larger model for wide,
+                oblique pandal cameras where devotees occupy few pixels.
             confidence: Detection confidence for persons/heads.
+            imgsz: Inference resolution.  A higher value preserves small
+                people in distant queues.
         """
         self.model = YOLO(model_name)
         self.confidence = confidence
+        self.imgsz = max(320, int(imgsz))
         self.person_class = 0  # COCO class 0 is person
 
     def detect_heads(
@@ -42,7 +47,7 @@ class OverheadCrowdDetector:
             source=frame,
             conf=self.confidence,
             classes=[self.person_class],
-            imgsz=480,
+            imgsz=self.imgsz,
             device="cpu",
             verbose=False,
         )
@@ -55,9 +60,12 @@ class OverheadCrowdDetector:
             for box in results[0].boxes:
                 conf = float(box.conf[0].item())
                 x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                # For overhead top-down view, centroid represents head position
+                # Use upper-body position rather than the box centre.  The
+                # supplied pandal camera is oblique, so its box centre falls
+                # behind the actual head and can put a devotee in the wrong
+                # entry/exit zone.
                 cx = (x1 + x2) // 2
-                cy = (y1 + y2) // 2
+                cy = int(y1 + 0.25 * (y2 - y1))
 
                 head_centroids.append((cx, cy))
                 boxes_out.append([x1, y1, x2, y2])

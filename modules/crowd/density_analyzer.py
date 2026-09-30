@@ -14,6 +14,7 @@ class PandalDensityAnalyzer:
         critical_thresh: float = 4.5,
         blur_radius: int = 35,
         heatmap_alpha: float = 0.45,
+        smoothing_window: int = 1,
     ):
         """Initialize Pandal Density Analyzer.
 
@@ -36,6 +37,8 @@ class PandalDensityAnalyzer:
         self.critical_thresh = critical_thresh
         self.blur_radius = blur_radius if blur_radius % 2 != 0 else blur_radius + 1
         self.heatmap_alpha = heatmap_alpha
+        self.smoothing_window = max(1, int(smoothing_window))
+        self._count_history: Dict[str, List[int]] = {z["id"]: [] for z in self.zones}
 
     def analyze_zones(
         self,
@@ -44,35 +47,53 @@ class PandalDensityAnalyzer:
         """Classify each detected person into pandal zones and compute density."""
         zone_stats = []
 
+        # Assign each detection to at most one zone. This prevents a person on
+        # a shared/overlapping boundary from being counted in multiple areas.
+        zone_counts = {zone["id"]: 0 for zone in self.zones}
+        for pt in head_centroids:
+            for zone in self.zones:
+                if cv2.pointPolygonTest(zone["polygon_np"], pt, False) >= 0:
+                    zone_counts[zone["id"]] += 1
+                    break
+
         for zone in self.zones:
             poly = zone["polygon_np"]
             area_m2 = max(1.0, float(zone.get("area_sq_meters", 50.0)))
+            # Count only detections assigned to this zone's polygon.
+            count = zone_counts[zone["id"]]
 
-            # Count heads inside polygon
-            count = 0
-            for pt in head_centroids:
-                if cv2.pointPolygonTest(poly, pt, False) >= 0:
-                    count += 1
+            # A short rolling median stops a single missed/duplicate detector box
+            # from flickering a safety directive.  The default remains immediate
+            # for programmatic users and unit tests.
+            history = self._count_history.setdefault(zone["id"], [])
+            history.append(count)
+            del history[:-self.smoothing_window]
+            smoothed_count = int(round(float(np.median(history))))
+            density = smoothed_count / area_m2
 
-            density = count / area_m2
+            # A perspective camera cannot reliably turn every image pixel into a
+            # square metre.  A zone may therefore define observed-person limits
+            # in addition to physical-density limits.  This is particularly
+            # useful for the distant, partially occluded queues in the supplied
+            # pandal camera.
+            warning_count = zone.get("warning_count")
+            critical_count = zone.get("critical_count")
+            is_critical_count = critical_count is not None and smoothed_count >= int(critical_count)
+            is_warning_count = warning_count is not None and smoothed_count >= int(warning_count)
 
             # Status classification
-            if density < self.normal_thresh:
-                status = "NORMAL"
-                color_bgr = (0, 255, 0)      # Green
-                level = 1
-            elif density < self.warning_thresh:
-                status = "WARNING"
-                color_bgr = (0, 220, 255)    # Yellow / Amber
-                level = 2
-            elif density < self.critical_thresh:
+            if is_critical_count or density >= self.critical_thresh:
+                status = "CRITICAL_SURGE"
+                color_bgr = (0, 0, 255)      # Red
+                level = 3
+            elif is_warning_count or density >= self.normal_thresh:
                 status = "WARNING"
                 color_bgr = (0, 220, 255)    # Yellow / Amber
                 level = 2
             else:
-                status = "CRITICAL_SURGE"
-                color_bgr = (0, 0, 255)      # Red
-                level = 3
+                status = "NORMAL"
+                color_bgr = (0, 255, 0)      # Green
+                level = 1
 
             zone_stats.append({
                 "id": zone["id"],
@@ -80,11 +101,13 @@ class PandalDensityAnalyzer:
                 "polygon": zone["polygon"],
                 "polygon_np": poly,
                 "area_m2": area_m2,
-                "head_count": count,
+                "head_count": smoothed_count,
+                "raw_head_count": count,
                 "density_per_m2": round(density, 2),
                 "status": status,
                 "status_color": color_bgr,
                 "level": level,
+                "count_limit_triggered": is_critical_count or is_warning_count,
             })
 
         return zone_stats

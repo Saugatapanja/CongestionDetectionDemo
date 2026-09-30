@@ -32,6 +32,12 @@ class CrowdAlertSystem:
 
         zone_dict = {z["id"]: z for z in zone_stats}
 
+        def observed_load(zone: Dict) -> str:
+            """Describe a density trigger without mislabelling a count limit."""
+            if zone.get("count_limit_triggered"):
+                return f"calibrated camera count limit reached ({zone['head_count']} detected people)"
+            return f"density reached {zone['density_per_m2']} persons/m² ({zone['head_count']} people)"
+
         # Check Exit Corridor
         if "exit_corridor" in zone_dict:
             exit_zone = zone_dict["exit_corridor"]
@@ -42,7 +48,7 @@ class CrowdAlertSystem:
                     "zone_id": "exit_corridor",
                     "title": "EMERGENCY: EXIT CORRIDOR RESTRICTION",
                     "police_action": "Deploy rapid-response officers to clear exit bottlenecks immediately to avoid stampede pressure.",
-                    "details": f"Exit corridor density reached {exit_zone['density_per_m2']} persons/m² ({exit_zone['head_count']} people).",
+                    "details": f"Exit corridor {observed_load(exit_zone)}.",
                 }
                 active_alerts.append(alert)
 
@@ -56,7 +62,7 @@ class CrowdAlertSystem:
                     "zone_id": "main_sanctum",
                     "title": "HOLD ENTRY QUEUE BARRICADE",
                     "police_action": "Temporarily stop intake at outer entry barricades for 3-5 minutes until sanctum clears.",
-                    "details": f"Main viewing sanctum at maximum capacity: {sanctum['density_per_m2']} persons/m² ({sanctum['head_count']} people inside).",
+                    "details": f"Main viewing sanctum load: {observed_load(sanctum)}.",
                 }
                 active_alerts.append(alert)
             elif sanctum["level"] == 2:

@@ -20,8 +20,10 @@ traffic:
   frame_stride: 2                 # Process every Nth frame for smooth CPU FPS
 
 crowd:
-  model_name: "yolov8n.pt"
+  # Nano model keeps per-frame inference fast enough for real-time playback.
+  model_name: "yolo11n.pt"
   confidence_threshold: 0.25
+  inference_size: 640            # Smaller input keeps pandal inference responsive
   person_class: 0                 # COCO class 0: Person
   density_thresholds:             # People per square meter
     normal: 1.5                   # Level Green: Free movement
@@ -29,7 +31,7 @@ crowd:
     critical: 4.5                 # Level Red: Dangerous surge / stampede hazard
   heatmap_blur_radius: 25         # Gaussian blur radius for density heatmap
   heatmap_alpha: 0.45             # Heatmap transparency overlay
-  frame_stride: 2
+  frame_stride: 2                 # Analyze at half source FPS to keep playback real time
 
 routing:
   default_city: "Kolkata, West Bengal, India"
