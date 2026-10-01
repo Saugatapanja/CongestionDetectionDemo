@@ -69,7 +69,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 class AppState:
     def __init__(self):
         self.mode = "traffic"  # "traffic" or "crowd"
-        self.stream_version = 0
+        self.stream_versions = {"traffic": 0, "crowd": 0}
         self.traffic_video = os.path.join(PROJECT_ROOT, "data", "sample_videos", "traffic_demo.mp4")
         self.crowd_video = os.path.join(PROJECT_ROOT, "data", "sample_videos", "crowd_demo.mp4")
         self.active_road_name = "Central Avenue (CR Avenue)"
@@ -147,17 +147,21 @@ if not os.path.exists(state.crowd_video):
     generate_crowd_sample(state.crowd_video)
 
 
-def generate_traffic_stream() -> Generator[bytes, None, None]:
+def generate_traffic_stream(follow_global_mode: bool = True) -> Generator[bytes, None, None]:
     """Processes traffic video stream with YOLO vehicle tracking, full-frame detection,
 
     and Kolkata route diversion analysis.
+
+    follow_global_mode=False pins the stream to traffic, so a view served at /traffic keeps
+    running when another client switches the global mode.
     """
     state.config = state._load_config()
     state.zones = state._load_zones()
     
     t_cfg = state.config.get("traffic", {})
     target_w, target_h = 800, 450
-    local_version = state.stream_version
+    local_version = state.stream_versions["traffic"]
+    local_other_version = state.stream_versions["crowd"]
     local_video = state.traffic_video
 
     # Full frame detection vs Calibrated ROI
@@ -195,7 +199,13 @@ def generate_traffic_stream() -> Generator[bytes, None, None]:
 
     try:
         for f_idx, frame, fps in loader.frames():
-            if state.mode != "traffic" or state.stream_version != local_version or state.traffic_video != local_video:
+            # Only an unpinned stream (standalone "/") reacts to the global mode and to a
+            # bump on the other module; a pinned stream watches its own module alone
+            if follow_global_mode and (
+                state.mode != "traffic" or state.stream_versions["crowd"] != local_other_version
+            ):
+                break
+            if state.stream_versions["traffic"] != local_version or state.traffic_video != local_video:
                 break
 
             all_boxes, all_lbls, all_confs, roi_boxes, roi_lbls, roi_confs = detector.detect(
@@ -268,14 +278,19 @@ def generate_traffic_stream() -> Generator[bytes, None, None]:
         loader.release()
 
 
-def generate_crowd_stream() -> Generator[bytes, None, None]:
-    """Processes pandal crowd video stream with overhead density and heatmap analysis."""
+def generate_crowd_stream(follow_global_mode: bool = True) -> Generator[bytes, None, None]:
+    """Processes pandal crowd video stream with overhead density and heatmap analysis.
+
+    follow_global_mode=False pins the stream to crowd, so a view served at /crowd keeps
+    running when another client switches the global mode.
+    """
     state.config = state._load_config()
     state.zones = state._load_zones()
     
     c_cfg = state.config.get("crowd", {})
     zones_list = state.zones.get("crowd_pandal", {}).get("zones", [])
-    local_version = state.stream_version
+    local_version = state.stream_versions["crowd"]
+    local_other_version = state.stream_versions["traffic"]
     local_video = state.crowd_video
 
     loader = VideoStreamLoader(
@@ -299,7 +314,13 @@ def generate_crowd_stream() -> Generator[bytes, None, None]:
 
     try:
         for f_idx, frame, fps in loader.frames():
-            if state.mode != "crowd" or state.stream_version != local_version or state.crowd_video != local_video:
+            # Only an unpinned stream (standalone "/") reacts to the global mode and to a
+            # bump on the other module; a pinned stream watches its own module alone
+            if follow_global_mode and (
+                state.mode != "crowd" or state.stream_versions["traffic"] != local_other_version
+            ):
+                break
+            if state.stream_versions["crowd"] != local_version or state.crowd_video != local_video:
                 break
 
             head_centroids, boxes, confs = detector.detect_heads(frame)
@@ -352,13 +373,43 @@ def generate_crowd_stream() -> Generator[bytes, None, None]:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html", context={"mode": state.mode})
+    """Standalone combined dashboard: both modules on one page, driven by the global mode."""
+    return templates.TemplateResponse(
+        request=request, name="index.html", context={"mode": state.mode, "pinned": False}
+    )
+
+
+@app.get("/traffic", response_class=HTMLResponse)
+async def traffic_view(request: Request):
+    """Module A only, pinned so an embedded view ignores mode changes made by other clients."""
+    return templates.TemplateResponse(
+        request=request, name="index.html", context={"mode": "traffic", "pinned": True}
+    )
+
+
+@app.get("/crowd", response_class=HTMLResponse)
+async def crowd_view(request: Request):
+    """Module B only, pinned so an embedded view ignores mode changes made by other clients."""
+    return templates.TemplateResponse(
+        request=request, name="index.html", context={"mode": "crowd", "pinned": True}
+    )
 
 
 @app.get("/video_feed")
-async def video_feed(request: Request):
+async def video_feed(request: Request, mode: Optional[str] = None):
+    if mode is not None and mode not in ("traffic", "crowd"):
+        raise HTTPException(status_code=400, detail="mode must be 'traffic' or 'crowd'")
+
+    # Omitting ?mode= preserves the standalone behaviour: follow, and react to, the global mode
+    follow_global_mode = mode is None
+    stream_mode = mode or state.mode
+
     async def stream_wrapper():
-        gen = generate_traffic_stream() if state.mode == "traffic" else generate_crowd_stream()
+        gen = (
+            generate_traffic_stream(follow_global_mode)
+            if stream_mode == "traffic"
+            else generate_crowd_stream(follow_global_mode)
+        )
         try:
             while True:
                 if await request.is_disconnected():
@@ -430,7 +481,8 @@ def get_map():
 async def set_mode(data: Dict):
     new_mode = data.get("mode", "traffic")
     if new_mode in ["traffic", "crowd"]:
-        state.stream_version += 1
+        for version_key in state.stream_versions:
+            state.stream_versions[version_key] += 1
         state.mode = new_mode
         state.telemetry["mode"] = new_mode
         return {"status": "success", "mode": state.mode}
@@ -449,8 +501,10 @@ async def upload_video(
     if not file.filename.lower().endswith((".mp4", ".avi", ".mov", ".mkv")):
         raise HTTPException(status_code=400, detail="Only video files (.mp4, .avi, .mov, .mkv) are supported")
 
-    # Increment stream version immediately to interrupt any running stream & free CPU for upload
-    state.stream_version += 1
+    # Interrupt only the targeted module's stream immediately, to free CPU for the upload.
+    # Bumping the other module here would freeze a sibling view embedded elsewhere.
+    if mode in state.stream_versions:
+        state.stream_versions[mode] += 1
 
     dest_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(dest_path, "wb") as buffer:
@@ -497,15 +551,15 @@ async def upload_video(
         "dest_junction": dest_junction,
         "roi_mode": roi_mode,
         "video_path": dest_path,
-        "stream_version": state.stream_version,
+        "stream_version": state.stream_versions.get(mode, 0),
     }
 
 
 @app.post("/api/reset_demo")
 async def reset_demo(data: Dict):
     target = data.get("target", "all")
-    state.stream_version += 1
     if target in ["traffic", "all"]:
+        state.stream_versions["traffic"] += 1
         state.traffic_video = os.path.join(PROJECT_ROOT, "data", "sample_videos", "traffic_demo.mp4")
         state.active_road_name = "Central Avenue (CR Avenue)"
         state.source_junction = "Shyambazar_5Point"
@@ -513,5 +567,6 @@ async def reset_demo(data: Dict):
         state.roi_mode = "full"
         state.route_recommender.penalize_road_by_name("Central Avenue", False)
     if target in ["crowd", "all"]:
+        state.stream_versions["crowd"] += 1
         state.crowd_video = os.path.join(PROJECT_ROOT, "data", "sample_videos", "crowd_demo.mp4")
     return {"status": "success", "message": "Reset to default demo simulations"}

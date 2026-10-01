@@ -4,10 +4,18 @@
  * mode transitions, and video uploads.
  */
 
-let currentMode = "traffic";
+// "/" follows the global mode; "/traffic" and "/crowd" are pinned to their own module
+let currentMode = window.__VIEW_MODE__ || "traffic";
+const isPinnedView = window.__PINNED_VIEW__ === true;
 let isPolling = true;
 let lastMapRefresh = 0;
 let isVideoPaused = false;
+
+// A pinned view names its module so the backend stream ignores the global mode
+function buildFeedUrl() {
+  const modeParam = isPinnedView ? `mode=${currentMode}&` : "";
+  return `/video_feed?${modeParam}t=${Date.now()}`;
+}
 
 // Update Live Clock
 function updateClock() {
@@ -35,21 +43,24 @@ async function switchMode(mode, force = false) {
   const camLabel = document.getElementById("cameraLabel");
 
   if (mode === "traffic") {
-    btnTraffic.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all bg-blue-600 text-white shadow-lg";
-    btnCrowd.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white";
+    if (btnTraffic) btnTraffic.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all bg-blue-600 text-white shadow-lg";
+    if (btnCrowd) btnCrowd.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white";
     trafficPanel.classList.remove("hidden");
     crowdPanel.classList.add("hidden");
     trafficMap.classList.remove("hidden");
   } else {
-    btnCrowd.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all bg-blue-600 text-white shadow-lg";
-    btnTraffic.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white";
+    if (btnCrowd) btnCrowd.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all bg-blue-600 text-white shadow-lg";
+    if (btnTraffic) btnTraffic.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white";
     trafficPanel.classList.add("hidden");
     crowdPanel.classList.remove("hidden");
     trafficMap.classList.add("hidden");
     if (camLabel) camLabel.innerText = "CCTV-04: Overhead Durga Puja Pandal Sanctum";
   }
 
-  // Notify backend
+  // Notify backend. A pinned view must never touch the global mode — that is what
+  // flipped the feed for every other connected client.
+  if (isPinnedView) return;
+
   try {
     await fetch("/api/set_mode", {
       method: "POST",
@@ -79,7 +90,7 @@ function toggleVideoReload() {
 
   setTimeout(() => {
     if (feed) {
-      feed.src = `/video_feed?t=${Date.now()}`;
+      feed.src = buildFeedUrl();
     }
     if (loading) {
       setTimeout(() => loading.classList.add("hidden"), 800);
@@ -133,7 +144,7 @@ function toggleVideoPlayback() {
     isVideoPaused = false;
     pausedFrame.classList.add("hidden");
     feed.classList.remove("hidden");
-    feed.src = `/video_feed?t=${Date.now()}`;
+    feed.src = buildFeedUrl();
   }
 
   updateVideoPlaybackControls();
@@ -608,6 +619,7 @@ async function resetDemo() {
   }
 }
 
-// Initialize dynamic nodes and start polling
+// Initialize dynamic nodes, start the stream on mount, and start polling
 loadKolkataNodes();
+toggleVideoReload();
 pollTelemetry();

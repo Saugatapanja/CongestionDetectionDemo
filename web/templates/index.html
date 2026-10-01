@@ -48,17 +48,19 @@
       </div>
     </div>
 
-    <!-- Mode Selector Switches -->
+    <!-- Mode Selector Switches (standalone only: a pinned view defers to the host shell's nav) -->
+    {% if not pinned %}
     <div class="flex items-center bg-slate-800/80 p-1 rounded-xl border border-slate-700">
-      <button id="btnModeTraffic" onclick="switchMode('traffic')" class="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all bg-blue-600 text-white shadow-lg">
+      <button id="btnModeTraffic" onclick="switchMode('traffic')" class="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all {% if mode == 'crowd' %}text-slate-400 hover:text-white{% else %}bg-blue-600 text-white shadow-lg{% endif %}">
         <i class="fa-solid fa-car"></i>
         <span>Traffic Congestion & Diversion</span>
       </button>
-      <button id="btnModeCrowd" onclick="switchMode('crowd')" class="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white">
+      <button id="btnModeCrowd" onclick="switchMode('crowd')" class="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all {% if mode == 'crowd' %}bg-blue-600 text-white shadow-lg{% else %}text-slate-400 hover:text-white{% endif %}">
         <i class="fa-solid fa-people-group"></i>
         <span>Durga Puja Pandal Crowd</span>
       </button>
     </div>
+    {% endif %}
 
     <!-- Status & Quick Controls -->
     <div class="flex items-center space-x-4">
@@ -97,7 +99,7 @@
               <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
               <span>LIVE AI CAMERA FEED</span>
             </span>
-            <span id="cameraLabel" class="text-sm font-semibold text-slate-200">Central Avenue (CR Avenue)</span>
+            <span id="cameraLabel" class="text-sm font-semibold text-slate-200">{% if mode == 'crowd' %}CCTV-04: Overhead Durga Puja Pandal Sanctum{% else %}Central Avenue (CR Avenue){% endif %}</span>
             <span id="routeBanner" class="px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-medium">Shyambazar 5-Point → Park Circus 7-Point</span>
             <span id="coverageBadge" class="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-medium">100% Full Video Coverage</span>
           </div>
@@ -114,7 +116,7 @@
 
         <!-- Video Player Viewport -->
         <div class="relative w-full aspect-video bg-black rounded-xl overflow-hidden flex items-center justify-center border border-slate-800 shadow-inner">
-          <img id="videoFeed" src="/video_feed" alt="Live Stream" class="w-full h-full object-contain" />
+          <img id="videoFeed" alt="Live Stream" class="w-full h-full object-contain" />
           <canvas id="pausedVideoFrame" class="hidden absolute inset-0 w-full h-full object-contain"></canvas>
           <div id="loadingOverlay" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur flex flex-col items-center justify-center space-y-3">
             <i class="fa-solid fa-circle-notch fa-spin text-3xl text-blue-500"></i>
@@ -135,7 +137,7 @@
       </div>
 
       <!-- INTERACTIVE OPENSTREETMAP ROUTE DIVERSION (VISIBLE IN TRAFFIC MODE) -->
-      <div id="trafficMapContainer" class="bg-slate-900 rounded-2xl p-4 border border-slate-800 hud-border flex flex-col">
+      <div id="trafficMapContainer" class="bg-slate-900 rounded-2xl p-4 border border-slate-800 hud-border flex flex-col{% if mode == 'crowd' %} hidden{% endif %}">
         <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
           <div class="flex items-center space-x-2">
             <i class="fa-solid fa-map-location-dot text-blue-400"></i>
@@ -164,7 +166,7 @@
     <div class="lg:col-span-4 flex flex-col space-y-6">
 
       <!-- TRAFFIC PANEL (VISIBLE IN TRAFFIC MODE) -->
-      <div id="trafficTelemetryPanel" class="flex flex-col space-y-6">
+      <div id="trafficTelemetryPanel" class="flex flex-col space-y-6{% if mode == 'crowd' %} hidden{% endif %}">
 
         <!-- LEVEL OF SERVICE (LOS) GAUGE CARD -->
         <div class="bg-slate-900 rounded-2xl p-5 border border-slate-800 hud-border flex flex-col">
@@ -269,7 +271,7 @@
       </div>
 
       <!-- CROWD PANEL (VISIBLE IN CROWD MODE) -->
-      <div id="crowdTelemetryPanel" class="hidden flex-col space-y-6">
+      <div id="crowdTelemetryPanel" class="{% if mode != 'crowd' %}hidden {% endif %}flex-col space-y-6">
 
         <!-- PANDAL OVERVIEW CARD -->
         <div class="bg-slate-900 rounded-2xl p-5 border border-slate-800 hud-border flex flex-col">
@@ -412,6 +414,10 @@
   </div>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="/static/dashboard.js?v=2"></script>
+  <script>
+    window.__VIEW_MODE__ = "{{ mode }}";
+    window.__PINNED_VIEW__ = {% if pinned %}true{% else %}false{% endif %};
+  </script>
+  <script src="/static/dashboard.js?v=3"></script>
 </body>
 </html>
