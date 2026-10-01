@@ -83,11 +83,26 @@ python run.py --mode traffic --video path/to/traffic_video.mp4 --save-output
 - When severe congestion (LOS E/F) is detected, the system will compute alternate routes and save an interactive map to:
   `outputs/traffic_diversion_map.html` (open in any web browser).
 
+The supplied Maa Flyover clip has a calibrated road region and stricter
+queue threshold already configured:
+
+```bash
+python run.py --mode traffic --video "data/sample_videos/Traffic Congestions 1_Gemini generated.mp4" --save-output
+```
+
 ### Step 3: Run Pandal Crowd Safety Monitor
 ```bash
 python run.py --mode crowd --video path/to/pandal_overhead.mp4 --save-output
 ```
 - Monitors crowd density ($people/m^2$) and logs all critical events to `outputs/crowd_alerts.json`.
+
+The supplied Durga Puja clip automatically uses separate entry, pandal
+approach, and left-exit zones, with a short smoothing window to avoid alert
+flicker:
+
+```bash
+python run.py --mode crowd --video "data/sample_videos/Durga Puja Pandal Overcrowded_Gemini generated.mp4" --save-output
+```
 
 ---
 

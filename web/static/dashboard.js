@@ -228,16 +228,16 @@ function updateTrafficUI(t) {
   if (t.level_of_service === "A" || t.level_of_service === "B") {
     losBadge.className = "w-20 h-20 rounded-2xl flex flex-col items-center justify-center font-black text-3xl bg-emerald-500/20 text-emerald-400 border-2 border-emerald-500/50 shadow-lg";
     statusText.className = "text-lg font-bold text-emerald-400";
-    statusDesc.innerText = "Vehicles moving smoothly at design speed. No queues or congestion.";
+    statusDesc.innerText = t.status_message || "Traffic is flowing smoothly with no significant queues detected.";
   } else if (t.level_of_service === "C" || t.level_of_service === "D") {
     losBadge.className = "w-20 h-20 rounded-2xl flex flex-col items-center justify-center font-black text-3xl bg-amber-500/20 text-amber-400 border-2 border-amber-500/50 shadow-lg";
     statusText.className = "text-lg font-bold text-amber-400";
-    statusDesc.innerText = "Moderate vehicle density. Queue forming; monitor closely.";
+    statusDesc.innerText = t.status_message || "Traffic density is elevated. Monitor the queue and signal flow closely.";
   } else {
     // Congested or Gridlock (E or F)
     losBadge.className = "w-20 h-20 rounded-2xl flex flex-col items-center justify-center font-black text-3xl bg-red-500/20 text-red-400 border-2 border-red-500/50 shadow-lg pulse-alert";
     statusText.className = "text-lg font-bold text-red-400";
-    statusDesc.innerText = "Severe congestion / gridlock! Alternate diversion dispatch recommended.";
+    statusDesc.innerText = t.status_message || "Heavy congestion detected. Diversion is recommended to reduce the queue.";
   }
 
   // 2. Occupancy Bar
@@ -258,10 +258,13 @@ function updateTrafficUI(t) {
   document.getElementById("totalVehiclesCount").innerText = `${t.vehicle_count || 0} Total`;
   const bd = t.vehicle_breakdown || {};
   const carCount = bd["Car"] || 0;
+  const carThreshold = Number.isFinite(Number(t.car_count_threshold))
+    ? Number(t.car_count_threshold)
+    : null;
   const countCarsEl = document.getElementById("countCars");
   if (countCarsEl) {
     countCarsEl.innerText = carCount;
-    if (carCount > 6 || t.car_threshold_exceeded) {
+    if (t.car_threshold_exceeded || (carThreshold !== null && carCount > carThreshold)) {
       countCarsEl.className = "text-lg font-bold text-red-400 mono animate-pulse";
     } else {
       countCarsEl.className = "text-lg font-bold text-white mono";
@@ -291,10 +294,11 @@ function updateTrafficUI(t) {
     icon.className = "w-10 h-10 rounded-lg flex items-center justify-center bg-red-600/30 text-red-400 text-lg flex-shrink-0";
     icon.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
 
-    if (t.car_threshold_exceeded || carCount > 6) {
-      title.innerText = `POLICE DIRECTIVE: CRITICAL CAR DENSITY (${carCount} CARS > 6)`;
+    if (t.car_threshold_exceeded) {
+      const thresholdText = carThreshold === null ? "" : ` > ${carThreshold}`;
+      title.innerText = `POLICE DIRECTIVE: CRITICAL CAR DENSITY (${carCount} CARS ${thresholdText})`;
       title.className = "text-xs font-bold uppercase tracking-wider text-red-400";
-      msg.innerText = t.police_message || t.recommendation || `Kolkata Police Alert: Over 6 cars (${carCount}) detected. Immediate diversion recommended.`;
+      msg.innerText = t.police_message || t.recommendation || `Kolkata Police Alert: Critical vehicle volume detected (${carCount} cars${thresholdText}). Immediate diversion recommended.`;
     } else {
       title.innerText = "POLICE DIVERSION DIRECTIVE ACTIVATED";
       title.className = "text-xs font-bold uppercase tracking-wider text-red-400";
@@ -306,7 +310,7 @@ function updateTrafficUI(t) {
     icon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
     title.innerText = "POLICE DIRECTIVE: FLOW NORMAL";
     title.className = "text-xs font-bold uppercase tracking-wider text-emerald-400";
-    msg.innerText = "Traffic flowing within capacity. No police diversions required.";
+    msg.innerText = t.recommendation || "Traffic flowing within capacity. No police diversions required.";
   }
 
   // 5. Alternate Routes List with Multi-Factor Confidence Scoring
@@ -411,7 +415,7 @@ function updateCrowdUI(c) {
     icon.innerHTML = '<i class="fa-solid fa-bullhorn"></i>';
     title.innerText = `TACTICAL DIRECTIVE: ${topAlert.title}`;
     title.className = "text-xs font-bold uppercase tracking-wider text-red-400";
-    msg.innerText = topAlert.police_action;
+    msg.innerText = c.status_message || topAlert.police_action;
 
     alertsContainer.innerHTML = c.active_alerts
       .map(
@@ -428,17 +432,32 @@ function updateCrowdUI(c) {
       )
       .join("");
   } else {
-    banner.className = "mt-4 p-3.5 rounded-xl border flex items-center space-x-4 transition-all bg-emerald-950/40 border-emerald-500/40 text-emerald-300";
-    icon.className = "w-10 h-10 rounded-lg flex items-center justify-center bg-emerald-600/30 text-emerald-400 text-lg flex-shrink-0";
-    icon.innerHTML = '<i class="fa-solid fa-shield-check"></i>';
-    title.innerText = "PANDAL CROWD SAFETY: OPTIMAL";
-    title.className = "text-xs font-bold uppercase tracking-wider text-emerald-400";
-    msg.innerText = "All sanctum and exit corridors flowing smoothly. No bottlenecks.";
+    const elevatedZones = (c.zones || []).filter((zone) => zone.level >= 2);
+    const hasElevatedDensity = elevatedZones.length > 0;
+    const isAnalyzing = !c.zones || c.zones.length === 0;
+    banner.className = hasElevatedDensity
+      ? "mt-4 p-3.5 rounded-xl border flex items-center space-x-4 transition-all bg-amber-950/40 border-amber-500/40 text-amber-300"
+      : "mt-4 p-3.5 rounded-xl border flex items-center space-x-4 transition-all bg-emerald-950/40 border-emerald-500/40 text-emerald-300";
+    icon.className = hasElevatedDensity
+      ? "w-10 h-10 rounded-lg flex items-center justify-center bg-amber-600/30 text-amber-400 text-lg flex-shrink-0"
+      : "w-10 h-10 rounded-lg flex items-center justify-center bg-emerald-600/30 text-emerald-400 text-lg flex-shrink-0";
+    icon.innerHTML = hasElevatedDensity
+      ? '<i class="fa-solid fa-triangle-exclamation"></i>'
+      : '<i class="fa-solid fa-shield-check"></i>';
+    title.innerText = isAnalyzing
+      ? "PANDAL CROWD SAFETY: ANALYZING"
+      : hasElevatedDensity
+        ? "PANDAL CROWD SAFETY: DENSITY ADVISORY"
+        : "PANDAL CROWD SAFETY: OPTIMAL";
+    title.className = hasElevatedDensity
+      ? "text-xs font-bold uppercase tracking-wider text-amber-400"
+      : "text-xs font-bold uppercase tracking-wider text-emerald-400";
+    msg.innerText = c.status_message || "All sanctum and exit corridors flowing smoothly. No bottlenecks.";
 
     alertsContainer.innerHTML = `
-      <div class="text-xs text-emerald-400/80 italic flex items-center space-x-2">
-        <i class="fa-solid fa-check"></i>
-        <span>All pandal zones operating within safe crowd capacity limits.</span>
+      <div class="text-xs ${hasElevatedDensity ? "text-amber-400/80" : "text-emerald-400/80"} italic flex items-center space-x-2">
+        <i class="fa-solid ${hasElevatedDensity ? "fa-triangle-exclamation" : "fa-check"}"></i>
+        <span>${hasElevatedDensity ? "Elevated density detected; monitor the listed zones." : isAnalyzing ? "Waiting for crowd zone analysis." : "All pandal zones operating within safe crowd capacity limits."}</span>
       </div>
     `;
   }

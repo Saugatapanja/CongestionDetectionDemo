@@ -177,6 +177,7 @@ class CongestionMeter:
             "is_divert_recommended": divert,
             "car_threshold_exceeded": car_threshold_exceeded,
             "car_count": num_cars,
+            "car_count_threshold": self.car_threshold,
             "police_message": police_msg,
             "recommendation": police_msg,
         }

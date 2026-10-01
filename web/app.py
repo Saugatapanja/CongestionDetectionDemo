@@ -32,6 +32,7 @@ if sys.platform == "win32":
 
 from core.stream_loader import VideoStreamLoader
 from core.tracker import CentroidTracker
+from core.zone_profiles import crowd_zones, profile_for_video, traffic_roi
 from modules.traffic.vehicle_detector import VehicleDetector
 from modules.traffic.congestion_meter import CongestionMeter
 from modules.traffic.route_recommender import RouteRecommender
@@ -90,6 +91,7 @@ class AppState:
         self.crowd_detector = OverheadCrowdDetector(
             model_name=c_cfg.get("model_name", "yolov8n.pt"),
             confidence=c_cfg.get("confidence_threshold", 0.25),
+            imgsz=c_cfg.get("inference_size", 960),
         )
         self.route_recommender = RouteRecommender(city_name="Kolkata, India")
 
@@ -100,6 +102,7 @@ class AppState:
             "traffic": {
                 "level_of_service": "A",
                 "status": "FREE_FLOW",
+                "status_message": "Traffic is flowing smoothly with no significant queues detected.",
                 "occupancy_pct": 0.0,
                 "vehicle_count": 0,
                 "vehicle_breakdown": {},
@@ -120,6 +123,7 @@ class AppState:
                 "avg_confidence_pct": 89.0,
                 "zones": [],
                 "active_alerts": [],
+                "status_message": "Crowd levels are within safe operating limits across all monitored zones.",
             },
         }
 
@@ -164,13 +168,15 @@ def generate_traffic_stream(follow_global_mode: bool = True) -> Generator[bytes,
     local_other_version = state.stream_versions["crowd"]
     local_video = state.traffic_video
 
-    # Full frame detection vs Calibrated ROI
-    if state.roi_mode == "full":
+    # Recognise the bundled CCTV clips and apply their calibrated ROI even when
+    # they are uploaded through the dashboard with the default "full" setting.
+    profile = profile_for_video(state.zones, "traffic", local_video)
+    use_calibrated_roi = state.roi_mode != "full" or profile is not None
+    if not use_calibrated_roi:
         road_roi = np.array([[0, 0], [target_w, 0], [target_w, target_h], [0, target_h]], dtype=np.int32)
+        profile_overrides = {}
     else:
-        road_roi_list = state.zones.get("traffic", {}).get("road_roi")
-        if not road_roi_list:
-            road_roi_list = [[180, 560], [380, 240], [720, 240], [920, 560]]
+        road_roi_list, profile_overrides = traffic_roi(state.zones, local_video, (target_w, target_h))
         road_roi = np.array(road_roi_list, dtype=np.int32)
 
     frame_stride = t_cfg.get("frame_stride", 3)
@@ -182,16 +188,20 @@ def generate_traffic_stream(follow_global_mode: bool = True) -> Generator[bytes,
         loop=True,
     )
 
+    effective_cfg = {**t_cfg, **profile_overrides}
     detector = state.vehicle_detector
+    detector.confidence = effective_cfg.get("confidence_threshold", 0.35)
     recommender = state.route_recommender
-    tracker = CentroidTracker(max_disappeared=20, max_distance=80.0, fps=loader.fps)
+    processing_fps = loader.fps / max(1, frame_stride)
+    tracker = CentroidTracker(max_disappeared=20, max_distance=80.0, fps=processing_fps)
     meter = CongestionMeter(
         road_roi=road_roi,
-        free_flow_thresh=t_cfg.get("occupancy_thresholds", {}).get("free_flow", 30.0),
-        moderate_thresh=t_cfg.get("occupancy_thresholds", {}).get("moderate", 65.0),
-        congested_thresh=t_cfg.get("occupancy_thresholds", {}).get("congested", 80.0),
-        car_threshold=t_cfg.get("car_count_threshold", 10),
-        fps=loader.fps,
+        free_flow_thresh=effective_cfg.get("occupancy_thresholds", {}).get("free_flow", 30.0),
+        moderate_thresh=effective_cfg.get("occupancy_thresholds", {}).get("moderate", 65.0),
+        congested_thresh=effective_cfg.get("occupancy_thresholds", {}).get("congested", 80.0),
+        stationary_sec_thresh=effective_cfg.get("stationary_seconds_trigger", 5.0),
+        car_threshold=effective_cfg.get("car_count_threshold", 10),
+        fps=processing_fps,
     )
 
     last_diversion_check = 0.0
@@ -218,7 +228,7 @@ def generate_traffic_stream(follow_global_mode: bool = True) -> Generator[bytes,
             if metrics["is_divert_recommended"] and (now - last_diversion_check > 3.0):
                 last_diversion_check = now
                 if metrics.get("car_threshold_exceeded"):
-                    # Heavy car congestion (>10 cars): apply strong penalty ratio even if occupancy is moderate
+                    # High car volume: apply a strong penalty even if occupancy is moderate.
                     congestion_ratio = min(1.0, max(0.65, metrics["occupancy_pct"] / 100.0))
                 else:
                     congestion_ratio = min(1.0, metrics["occupancy_pct"] / 100.0)
@@ -234,7 +244,7 @@ def generate_traffic_stream(follow_global_mode: bool = True) -> Generator[bytes,
                     car_cnt = metrics.get("car_count", 0)
                     for r in latest_routes:
                         r["police_action"] = (
-                            f"KOLKATA POLICE DIRECTIVE (>6 CARS ALERT): Divert traffic onto alternate route "
+                            f"KOLKATA POLICE DIRECTIVE (>{metrics.get('car_count_threshold', 10)} CARS ALERT): Divert traffic onto alternate route "
                             f"to relieve {state.active_road_name} ({car_cnt} cars queued). Saves approx. {r.get('time_saved_min', 0)} mins."
                         )
 
@@ -248,7 +258,13 @@ def generate_traffic_stream(follow_global_mode: bool = True) -> Generator[bytes,
             metrics["monitored_road"] = state.active_road_name
             metrics["source_junction"] = state.source_junction
             metrics["dest_junction"] = state.dest_junction
-            metrics["roi_mode"] = state.roi_mode
+            metrics["roi_mode"] = "calibrated" if use_calibrated_roi else "full"
+            metrics["status_message"] = {
+                "FREE_FLOW": "Traffic is flowing smoothly with no significant queues detected.",
+                "MODERATE": "Traffic density is elevated. Monitor the queue and signal flow closely.",
+                "CONGESTED": "Heavy congestion detected. Diversion is recommended to reduce the queue.",
+                "GRIDLOCK": "Gridlock conditions detected. Immediate traffic diversion is recommended.",
+            }.get("GRIDLOCK" if metrics["status"] == "GRIDLOCK" else ("CONGESTED" if metrics["is_divert_recommended"] else metrics["status"]), "Traffic conditions are being analyzed.")
 
             state.telemetry["mode"] = "traffic"
             state.telemetry["fps"] = round(fps, 1)
@@ -260,7 +276,7 @@ def generate_traffic_stream(follow_global_mode: bool = True) -> Generator[bytes,
             status_color = metrics["status_color"]
 
             # If not full frame, draw the ROI polygon border
-            if state.roi_mode != "full":
+            if use_calibrated_roi:
                 cv2.polylines(disp, [meter.road_roi], True, status_color, 3)
 
             for i, (box, lbl) in enumerate(zip(all_boxes, all_lbls)):
@@ -288,29 +304,35 @@ def generate_crowd_stream(follow_global_mode: bool = True) -> Generator[bytes, N
     state.zones = state._load_zones()
     
     c_cfg = state.config.get("crowd", {})
-    zones_list = state.zones.get("crowd_pandal", {}).get("zones", [])
     local_version = state.stream_versions["crowd"]
     local_other_version = state.stream_versions["traffic"]
     local_video = state.crowd_video
 
     loader = VideoStreamLoader(
         source=local_video,
-        target_width=800,
-        target_height=450,
+        target_width=640,
+        target_height=360,
         frame_stride=c_cfg.get("frame_stride", 3),
         loop=True,
     )
 
+    zones_list, profile_overrides = crowd_zones(state.zones, local_video, loader.get_resolution())
+    effective_cfg = {**c_cfg, **profile_overrides}
+
     detector = state.crowd_detector
+    detector.confidence = effective_cfg.get("confidence_threshold", 0.25)
+    detector.imgsz = effective_cfg.get("inference_size", 960)
     analyzer = PandalDensityAnalyzer(
         zones_config=zones_list,
-        normal_thresh=c_cfg.get("density_thresholds", {}).get("normal", 1.5),
-        warning_thresh=c_cfg.get("density_thresholds", {}).get("warning", 3.0),
-        critical_thresh=c_cfg.get("density_thresholds", {}).get("critical", 4.5),
-        blur_radius=c_cfg.get("heatmap_blur_radius", 35),
-        heatmap_alpha=c_cfg.get("heatmap_alpha", 0.45),
+        normal_thresh=effective_cfg.get("density_thresholds", {}).get("normal", 1.5),
+        warning_thresh=effective_cfg.get("density_thresholds", {}).get("warning", 3.0),
+        critical_thresh=effective_cfg.get("density_thresholds", {}).get("critical", 4.5),
+        blur_radius=effective_cfg.get("heatmap_blur_radius", 35),
+        heatmap_alpha=effective_cfg.get("heatmap_alpha", 0.45),
+        smoothing_window=effective_cfg.get("smoothing_window", 1),
     )
     alert_sys = CrowdAlertSystem(log_file=os.path.join(OUTPUTS_DIR, "crowd_alerts.json"))
+    zone_polygons = [np.asarray(z["polygon"], dtype=np.int32) for z in zones_list]
 
     try:
         for f_idx, frame, fps in loader.frames():
@@ -324,6 +346,14 @@ def generate_crowd_stream(follow_global_mode: bool = True) -> Generator[bytes, N
                 break
 
             head_centroids, boxes, confs = detector.detect_heads(frame)
+            # Only detections whose head point falls within a monitored polygon
+            # contribute to crowd counts or the heatmap.
+            in_zone = [
+                i for i, point in enumerate(head_centroids)
+                if any(cv2.pointPolygonTest(poly, point, False) >= 0 for poly in zone_polygons)
+            ]
+            head_centroids = [head_centroids[i] for i in in_zone]
+            confs = [confs[i] for i in in_zone]
             zone_stats = analyzer.analyze_zones(head_centroids)
             heatmap_frame = analyzer.generate_heatmap_overlay(frame, head_centroids)
             active_alerts = alert_sys.evaluate_safety_risks(zone_stats)
@@ -344,11 +374,24 @@ def generate_crowd_stream(follow_global_mode: bool = True) -> Generator[bytes, N
             state.telemetry["mode"] = "crowd"
             state.telemetry["fps"] = round(fps, 1)
             state.telemetry["timestamp"] = now
+            crowd_alert = active_alerts[0] if active_alerts else None
+            elevated_zones = [z for z in clean_zone_stats if z["level"] >= 2]
+            if crowd_alert:
+                crowd_message = f"{crowd_alert['title']}: {crowd_alert['police_action']}"
+            elif elevated_zones:
+                names = ", ".join(z["name"] for z in elevated_zones)
+                crowd_message = f"Elevated crowd density detected in {names}. Monitor these zones closely."
+            elif not clean_zone_stats:
+                crowd_message = "Analyzing crowd video for zone density and safety risks..."
+            else:
+                crowd_message = "Crowd levels are within safe operating limits across all monitored zones."
             state.telemetry["crowd"] = {
-                "total_heads": len(head_centroids),
+                # Exclude detections outside monitored zones from the crowd total.
+                "total_heads": sum(z["raw_head_count"] for z in zone_stats),
                 "avg_confidence_pct": avg_crowd_conf,
                 "zones": clean_zone_stats,
                 "active_alerts": active_alerts,
+                "status_message": crowd_message,
             }
 
             disp = heatmap_frame.copy()
@@ -527,6 +570,7 @@ async def upload_video(
         state.telemetry["traffic"]["vehicle_breakdown"] = {}
         state.telemetry["traffic"]["stationary_vehicles"] = 0
         state.telemetry["traffic"]["status"] = "ANALYZING VIDEO"
+        state.telemetry["traffic"]["status_message"] = f"Analyzing video feed for {road_name}..."
         state.telemetry["traffic"]["level_of_service"] = "A"
         state.telemetry["traffic"]["occupancy_pct"] = 0.0
         state.telemetry["traffic"]["is_divert_recommended"] = False
@@ -541,6 +585,7 @@ async def upload_video(
         state.telemetry["mode"] = "crowd"
         state.telemetry["crowd"]["total_heads"] = 0
         state.telemetry["crowd"]["active_alerts"] = []
+        state.telemetry["crowd"]["status_message"] = "Analyzing uploaded crowd video for zone density and safety risks..."
 
     return {
         "status": "success",
