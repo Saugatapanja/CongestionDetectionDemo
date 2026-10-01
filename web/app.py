@@ -71,6 +71,8 @@ class AppState:
     def __init__(self):
         self.mode = "traffic"  # "traffic" or "crowd"
         self.stream_versions = {"traffic": 0, "crowd": 0}
+        # Bumped by set_mode; only unpinned "/" streams watch it, so pinned views survive
+        self.global_mode_version = 0
         self.traffic_video = os.path.join(PROJECT_ROOT, "data", "sample_videos", "traffic_demo.mp4")
         self.crowd_video = os.path.join(PROJECT_ROOT, "data", "sample_videos", "crowd_demo.mp4")
         self.active_road_name = "Central Avenue (CR Avenue)"
@@ -166,6 +168,7 @@ def generate_traffic_stream(follow_global_mode: bool = True) -> Generator[bytes,
     target_w, target_h = 800, 450
     local_version = state.stream_versions["traffic"]
     local_other_version = state.stream_versions["crowd"]
+    local_global_version = state.global_mode_version
     local_video = state.traffic_video
 
     # Recognise the bundled CCTV clips and apply their calibrated ROI even when
@@ -212,7 +215,9 @@ def generate_traffic_stream(follow_global_mode: bool = True) -> Generator[bytes,
             # Only an unpinned stream (standalone "/") reacts to the global mode and to a
             # bump on the other module; a pinned stream watches its own module alone
             if follow_global_mode and (
-                state.mode != "traffic" or state.stream_versions["crowd"] != local_other_version
+                state.mode != "traffic"
+                or state.stream_versions["crowd"] != local_other_version
+                or state.global_mode_version != local_global_version
             ):
                 break
             if state.stream_versions["traffic"] != local_version or state.traffic_video != local_video:
@@ -306,6 +311,7 @@ def generate_crowd_stream(follow_global_mode: bool = True) -> Generator[bytes, N
     c_cfg = state.config.get("crowd", {})
     local_version = state.stream_versions["crowd"]
     local_other_version = state.stream_versions["traffic"]
+    local_global_version = state.global_mode_version
     local_video = state.crowd_video
 
     loader = VideoStreamLoader(
@@ -339,7 +345,9 @@ def generate_crowd_stream(follow_global_mode: bool = True) -> Generator[bytes, N
             # Only an unpinned stream (standalone "/") reacts to the global mode and to a
             # bump on the other module; a pinned stream watches its own module alone
             if follow_global_mode and (
-                state.mode != "crowd" or state.stream_versions["traffic"] != local_other_version
+                state.mode != "crowd"
+                or state.stream_versions["traffic"] != local_other_version
+                or state.global_mode_version != local_global_version
             ):
                 break
             if state.stream_versions["crowd"] != local_version or state.crowd_video != local_video:
@@ -524,8 +532,7 @@ def get_map():
 async def set_mode(data: Dict):
     new_mode = data.get("mode", "traffic")
     if new_mode in ["traffic", "crowd"]:
-        for version_key in state.stream_versions:
-            state.stream_versions[version_key] += 1
+        state.global_mode_version += 1
         state.mode = new_mode
         state.telemetry["mode"] = new_mode
         return {"status": "success", "mode": state.mode}

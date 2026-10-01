@@ -2,7 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from web.app import app
+from web.app import app, generate_crowd_stream, generate_traffic_stream
 
 
 @pytest.fixture
@@ -79,3 +79,34 @@ def test_video_upload_with_kolkata_options(client, tmp_path):
     assert data["source_junction"] == "Ultadanga_Junction"
     assert data["dest_junction"] == "EM_Bypass_ScienceCity"
     assert data["roi_mode"] == "full"
+
+
+def test_set_mode_keeps_pinned_streams_running(client):
+    client.post("/api/reset_demo", json={"target": "all"})
+    pinned_traffic = generate_traffic_stream(follow_global_mode=False)
+    pinned_crowd = generate_crowd_stream(follow_global_mode=False)
+    try:
+        assert next(pinned_traffic).startswith(b"--frame")
+        assert next(pinned_crowd).startswith(b"--frame")
+
+        client.post("/api/set_mode", json={"mode": "crowd"})
+        client.post("/api/set_mode", json={"mode": "traffic"})
+
+        assert next(pinned_traffic, None) is not None
+        assert next(pinned_crowd, None) is not None
+    finally:
+        pinned_traffic.close()
+        pinned_crowd.close()
+
+
+def test_set_mode_restarts_unpinned_stream(client):
+    client.post("/api/reset_demo", json={"target": "all"})
+    client.post("/api/set_mode", json={"mode": "traffic"})
+    unpinned = generate_traffic_stream(follow_global_mode=True)
+    try:
+        assert next(unpinned).startswith(b"--frame")
+        # Same-mode switch still restarts "/" so the combined view reloads its feed
+        client.post("/api/set_mode", json={"mode": "traffic"})
+        assert next(unpinned, None) is None
+    finally:
+        unpinned.close()
