@@ -160,9 +160,18 @@ def generate_traffic_stream() -> Generator[bytes, None, None]:
     state.zones = state._load_zones()
     
     t_cfg = state.config.get("traffic", {})
-    target_w, target_h = 800, 450
     local_version = state.stream_version
     local_video = state.traffic_video
+
+    frame_stride = t_cfg.get("frame_stride", 3)
+    loader = VideoStreamLoader(
+        source=local_video,
+        target_width=None,
+        target_height=None,
+        frame_stride=frame_stride,
+        loop=True,
+    )
+    target_w, target_h = loader.get_resolution()
 
     # Recognise the bundled CCTV clips and apply their calibrated ROI even when
     # they are uploaded through the dashboard with the default "full" setting.
@@ -174,15 +183,6 @@ def generate_traffic_stream() -> Generator[bytes, None, None]:
     else:
         road_roi_list, profile_overrides = traffic_roi(state.zones, local_video, (target_w, target_h))
         road_roi = np.array(road_roi_list, dtype=np.int32)
-
-    frame_stride = t_cfg.get("frame_stride", 3)
-    loader = VideoStreamLoader(
-        source=local_video,
-        target_width=target_w,
-        target_height=target_h,
-        frame_stride=frame_stride,
-        loop=True,
-    )
 
     effective_cfg = {**t_cfg, **profile_overrides}
     detector = state.vehicle_detector
@@ -211,7 +211,7 @@ def generate_traffic_stream() -> Generator[bytes, None, None]:
             all_boxes, all_lbls, all_confs, roi_boxes, roi_lbls, roi_confs = detector.detect(
                 frame, road_roi=meter.road_roi
             )
-            tracked = tracker.update(all_boxes, all_lbls, confidences=all_confs)
+            tracked = tracker.update(roi_boxes, roi_lbls, confidences=roi_confs)
             metrics = meter.evaluate(roi_boxes, roi_lbls, tracked, frame.shape, confidences=roi_confs)
 
             now = time.time()
@@ -269,9 +269,9 @@ def generate_traffic_stream() -> Generator[bytes, None, None]:
             if use_calibrated_roi:
                 cv2.polylines(disp, [meter.road_roi], True, status_color, 3)
 
-            for i, (box, lbl) in enumerate(zip(all_boxes, all_lbls)):
+            for i, (box, lbl) in enumerate(zip(roi_boxes, roi_lbls)):
                 x1, y1, x2, y2 = box
-                conf_val = all_confs[i] if i < len(all_confs) else 0.85
+                conf_val = roi_confs[i] if i < len(roi_confs) else 0.85
                 cv2.rectangle(disp, (x1, y1), (x2, y2), status_color, 2)
                 label_txt = f"{lbl} {int(conf_val * 100)}%"
                 cv2.putText(disp, label_txt, (x1, max(15, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.42, status_color, 2)

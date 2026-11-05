@@ -63,6 +63,30 @@ def test_density_threshold_boundaries():
     assert critical["status"] == "CRITICAL_SURGE"
 
 
+def test_people_outside_zone_boxes_are_not_counted():
+    analyzer = PandalDensityAnalyzer(
+        [
+            {
+                "id": "entry",
+                "name": "Entry",
+                "area_sq_meters": 10.0,
+                "polygon": [[0, 0], [100, 0], [100, 100], [0, 100]],
+            },
+            {
+                "id": "exit",
+                "name": "Exit",
+                "area_sq_meters": 10.0,
+                "polygon": [[110, 0], [200, 0], [200, 100], [110, 100]],
+            },
+        ]
+    )
+
+    stats = analyzer.analyze_zones([(50, 50), (150, 50), (250, 50), (250, 150)])
+
+    assert [zone["raw_head_count"] for zone in stats] == [1, 1]
+    assert sum(zone["raw_head_count"] for zone in stats) == 2
+
+
 def test_crowd_alert_system(tmp_path):
     alert_sys = CrowdAlertSystem(
         log_file=str(tmp_path / "crowd_alerts.json"), alert_cooldown_sec=60.0
@@ -89,7 +113,7 @@ def test_crowd_alert_system(tmp_path):
     # Check that emergency actions are suggested
     titles = [a["title"] for a in alerts]
     assert any("HOLD ENTRY" in t for t in titles)
-    assert any("EXIT CORRIDOR" in t for t in titles)
+    assert any(a["zone_id"] == "exit_corridor" for a in alerts)
     history_count = len(alert_sys.alert_history)
     repeated_alerts = alert_sys.evaluate_safety_risks(zone_stats)
     assert repeated_alerts
@@ -97,24 +121,92 @@ def test_crowd_alert_system(tmp_path):
     assert os.path.exists(alert_sys.log_file)
 
 
-def test_crowd_alert_on_sanctum_headcount_increase(tmp_path):
+def test_exit_corridor_warning_is_not_reported_as_an_emergency(tmp_path):
+    alert_sys = CrowdAlertSystem(
+        log_file=str(tmp_path / "crowd_alerts.json"), alert_cooldown_sec=0.0
+    )
+    warning = [{
+        "id": "exit_corridor",
+        "name": "Exit Corridor",
+        "density_per_m2": 0.5,
+        "head_count": 10,
+        "level": 2,
+    }]
+    critical = [{
+        **warning[0],
+        "head_count": 12,
+        "level": 3,
+    }]
+    heavier_warning = [{
+        **warning[0],
+        "head_count": 11,
+    }]
+
+    warning_alert = alert_sys.evaluate_safety_risks(warning)[0]
+    heavier_warning_alert = alert_sys.evaluate_safety_risks(heavier_warning)[0]
+    emergency_alert = alert_sys.evaluate_safety_risks(critical)[0]
+
+    assert warning_alert["title"] == "EXIT FLOW ADVISORY"
+    assert warning_alert["severity"] == "WARNING"
+    assert warning_alert["police_action"] != heavier_warning_alert["police_action"]
+    assert emergency_alert["title"] == "EMERGENCY: EXIT CORRIDOR BLOCKAGE"
+    assert emergency_alert["severity"] == "CRITICAL"
+
+
+def test_primary_alert_tracks_the_highest_current_risk(tmp_path):
+    alert_sys = CrowdAlertSystem(
+        log_file=str(tmp_path / "crowd_alerts.json"), alert_cooldown_sec=0.0
+    )
+    exit_warning = {
+        "id": "exit_corridor",
+        "name": "Exit Corridor",
+        "density_per_m2": 0.5,
+        "head_count": 10,
+        "level": 2,
+    }
+    sanctum_normal = {
+        "id": "main_sanctum",
+        "name": "Main Sanctum",
+        "density_per_m2": 0.5,
+        "head_count": 5,
+        "level": 1,
+    }
+    sanctum_critical = {
+        **sanctum_normal,
+        "head_count": 12,
+        "level": 3,
+    }
+
+    normal_sanctum_alerts = alert_sys.evaluate_safety_risks(
+        [sanctum_normal, exit_warning]
+    )
+    critical_sanctum_alerts = alert_sys.evaluate_safety_risks(
+        [sanctum_critical, exit_warning]
+    )
+
+    assert normal_sanctum_alerts[0]["zone_id"] == "exit_corridor"
+    assert critical_sanctum_alerts[0]["zone_id"] == "main_sanctum"
+    assert critical_sanctum_alerts[0]["title"] == "HOLD ENTRY QUEUE BARRICADE"
+
+
+def test_crowd_alert_on_sanctum_level_increase(tmp_path):
     alert_sys = CrowdAlertSystem(
         log_file=str(tmp_path / "crowd_alerts.json"), alert_cooldown_sec=0.0
     )
 
-    def sanctum_stats(head_count):
+    def sanctum_stats(head_count, level):
         return [{
             "id": "main_sanctum",
             "name": "Main Sanctum",
             "density_per_m2": head_count / 10,
             "head_count": head_count,
-            "level": 2,
+            "level": level,
         }]
 
     assert not any(
         "HOLD ENTRY" in alert["title"]
-        for alert in alert_sys.evaluate_safety_risks(sanctum_stats(5))
+        for alert in alert_sys.evaluate_safety_risks(sanctum_stats(5, 1))
     )
-    alerts = alert_sys.evaluate_safety_risks(sanctum_stats(7))
+    alerts = alert_sys.evaluate_safety_risks(sanctum_stats(12, 3))
 
     assert any("HOLD ENTRY" in alert["title"] for alert in alerts)

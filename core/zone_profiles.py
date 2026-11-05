@@ -21,7 +21,8 @@ def profile_for_video(zones: Dict, mode: str, video_source: str) -> Optional[Dic
     """Return the matching profile, falling back to the ordinary mode zones."""
     name = Path(str(video_source)).name.lower()
     for profile in zones.get("video_profiles", {}).get(mode, []):
-        if profile.get("filename", "").lower() == name:
+        filenames = profile.get("filenames", [profile.get("filename", "")])
+        if any(filename.lower() == name for filename in filenames):
             return profile
     return None
 
@@ -30,12 +31,17 @@ def traffic_roi(zones: Dict, video_source: str, frame_size: Tuple[int, int]) -> 
     """Get a traffic ROI and its profile-specific runtime overrides."""
     profile = profile_for_video(zones, "traffic", video_source)
     if profile:
+        reference_size = profile["reference_size"]
+        points = profile.get("road_roi") or zones.get("traffic", {}).get("road_roi")
+        if not points:
+            ref_w, ref_h = reference_size
+            points = [[0, 0], [ref_w, 0], [ref_w, ref_h], [0, ref_h]]
         return (
-            _scale_points(profile["road_roi"], profile["reference_size"], frame_size),
+            _scale_points(points, reference_size, frame_size),
             profile.get("overrides", {}),
         )
-    points = zones.get("traffic", {}).get("road_roi") or [[180, 560], [380, 240], [720, 240], [920, 560]]
-    return points, {}
+    points = zones.get("traffic", {}).get("road_roi") or [[0, 0], [1024, 0], [1024, 576], [0, 576]]
+    return _scale_points(points, (1024, 576), frame_size), {}
 
 
 def crowd_zones(zones: Dict, video_source: str, frame_size: Tuple[int, int]) -> Tuple[List[Dict], Dict]:

@@ -1,14 +1,10 @@
 {
   "traffic": {
     "road_roi": [
-      [112, 437],
-      [262, 162],
-      [537, 162],
-      [700, 437]
-    ],
-    "virtual_loop_line": [
-      [150, 325],
-      [650, 325]
+      [0, 0],
+      [1024, 0],
+      [1024, 576],
+      [0, 576]
     ]
   },
   "crowd_pandal": {
@@ -30,8 +26,8 @@
         "area_sq_meters": 55.0,
         "polygon": [
           [225, 425],
-          [225, 125],
-          [575, 125],
+          [225, 200],
+          [575, 200],
           [575, 425]
         ]
       },
@@ -41,8 +37,8 @@
         "area_sq_meters": 30.0,
         "polygon": [
           [587, 425],
-          [587, 187],
-          [775, 187],
+          [587, 200],
+          [775, 200],
           [775, 425]
         ]
       }
@@ -51,13 +47,10 @@
   "video_profiles": {
     "traffic": [
       {
-        "filename": "Traffic Congestions 1_Gemini generated.mp4",
-        "reference_size": [1024, 576],
-        "road_roi": [[0, 55], [650, 35], [1024, 575], [0, 575]],
-        "overrides": {
-          "car_count_threshold": 16,
-          "stationary_seconds_trigger": 3.0
-        }
+        "filename": "road_traffic_2.mp4",
+        "reference_size": [478, 850],
+        "road_roi": [[0, 150], [409, 150], [355, 849], [0, 849]],
+        "overrides": {}
       }
     ],
     "crowd": [
@@ -84,7 +77,7 @@
             "area_sq_meters": 22.0,
             "warning_count": 6,
             "critical_count": 10,
-            "polygon": [[355, 155], [690, 155], [690, 575], [355, 575]]
+            "polygon": [[355, 285], [690, 285], [690, 575], [355, 575]]
           },
           {
             "id": "exit_corridor",
@@ -92,7 +85,7 @@
             "area_sq_meters": 20.0,
             "warning_count": 8,
             "critical_count": 12,
-            "polygon": [[690, 280], [920, 280], [920, 575], [690, 575]]
+            "polygon": [[690, 285], [920, 285], [920, 575], [690, 575]]
           }
         ]
       }

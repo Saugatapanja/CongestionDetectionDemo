@@ -44,15 +44,32 @@ class VehicleDetector:
             road_roi: Optional polygon (array of (x, y) coordinates) defining road area.
 
         Returns:
-            all_boxes: All vehicle bounding boxes [x1, y1, x2, y2].
-            all_labels: Labels for all vehicles.
-            all_confs: Confidences for all vehicles.
+            all_boxes: Vehicle detections from the monitored image region.
+            all_labels: Labels for detections in the monitored image region.
+            all_confs: Confidences for detections in the monitored image region.
             roi_boxes: Vehicle bounding boxes whose center lies inside road_roi.
             roi_labels: Labels for vehicles inside the road ROI.
             roi_confs: Confidences for vehicles inside the road ROI.
         """
+        inference_frame = frame
+        offset_x = offset_y = 0
+        if road_roi is not None and len(road_roi) >= 3:
+            road_roi = np.asarray(road_roi, dtype=np.int32)
+            offset_x, offset_y, roi_width, roi_height = cv2.boundingRect(road_roi)
+            frame_height, frame_width = frame.shape[:2]
+            x2 = min(frame_width, offset_x + roi_width)
+            y2 = min(frame_height, offset_y + roi_height)
+            inference_frame = frame[offset_y:y2, offset_x:x2]
+            if inference_frame.size == 0:
+                raise ValueError("Road ROI does not intersect the video frame")
+
+            local_roi = np.asarray(road_roi, dtype=np.int32) - np.array([offset_x, offset_y])
+            roi_mask = np.zeros(inference_frame.shape[:2], dtype=np.uint8)
+            cv2.fillPoly(roi_mask, [local_roi], 255)
+            inference_frame = cv2.bitwise_and(inference_frame, inference_frame, mask=roi_mask)
+
         results = self.model.predict(
-            source=frame,
+            source=inference_frame,
             conf=self.confidence,
             classes=self.target_classes,
             imgsz=640,
@@ -79,6 +96,10 @@ class VehicleDetector:
             cls_id = int(box.cls[0].item())
             conf = float(box.conf[0].item())
             x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+            x1 += offset_x
+            x2 += offset_x
+            y1 += offset_y
+            y2 += offset_y
 
             label = self.class_names.get(cls_id, f"Veh_{cls_id}")
             all_boxes.append([x1, y1, x2, y2])
