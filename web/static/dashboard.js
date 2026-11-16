@@ -276,8 +276,6 @@ function updateTrafficUI(t) {
   document.getElementById("countBikes").innerText = bd["Motorcycle"] || 0;
   document.getElementById("stationaryCount").innerText = t.stationary_vehicles || 0;
 
-  const confEl = document.getElementById("aiConfidenceVal");
-  if (confEl) confEl.innerText = `${t.avg_confidence_pct || 92.5}%`;
   const speedEl = document.getElementById("avgSpeedVal");
   if (speedEl) speedEl.innerText = `${t.avg_speed_kmh || 0.0} km/h`;
   const flowEl = document.getElementById("flowRateVal");
