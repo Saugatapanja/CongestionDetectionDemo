@@ -73,8 +73,8 @@ def run_traffic_module(
     frame_stride = max(1, int(t_cfg.get("frame_stride", 2)))
     loader = VideoStreamLoader(
         source=video_source,
-        target_width=config.get("ui", {}).get("display_width", 1024),
-        target_height=config.get("ui", {}).get("display_height", 576),
+        target_width=None,
+        target_height=None,
         frame_stride=frame_stride,
         loop=(not headless),
     )
@@ -138,7 +138,7 @@ def run_traffic_module(
                 )
 
                 # 2. Tracking with kinematic features
-                tracked = tracker.update(all_boxes, all_lbls, confidences=all_confs)
+                tracked = tracker.update(roi_boxes, roi_lbls, confidences=roi_confs)
 
                 # 3. Congestion evaluation with confidence & flow rate
                 metrics = meter.evaluate(roi_boxes, roi_lbls, tracked, frame.shape, confidences=roi_confs)
@@ -166,49 +166,71 @@ def run_traffic_module(
 
                 # 5. Render HUD Visuals
                 disp = frame.copy()
+                frame_h, frame_w = disp.shape[:2]
+                scale_x, scale_y = frame_w / 1024, frame_h / 576
+                ui_scale = min(scale_x, scale_y)
+                point = lambda x, y: (round(x * scale_x), round(y * scale_y))
+                thickness = lambda value: max(1, round(value * ui_scale))
 
                 # Draw Road ROI
                 status_color = metrics["status_color"]
-                cv2.polylines(disp, [meter.road_roi], True, status_color, 3)
+                cv2.polylines(disp, [meter.road_roi], True, status_color, thickness(3))
 
                 # Draw Vehicles with Confidence Scores & Speeds
-                for i, (box, lbl) in enumerate(zip(all_boxes, all_lbls)):
+                for i, (box, lbl) in enumerate(zip(roi_boxes, roi_lbls)):
                     x1, y1, x2, y2 = box
-                    conf = all_confs[i] if i < len(all_confs) else 0.85
-                    cv2.rectangle(disp, (x1, y1), (x2, y2), status_color, 2)
+                    conf = roi_confs[i] if i < len(roi_confs) else 0.85
+                    cv2.rectangle(disp, (x1, y1), (x2, y2), status_color, thickness(2))
                     label_str = f"{lbl} {int(conf * 100)}%"
-                    cv2.putText(disp, label_str, (x1, max(15, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, status_color, 2)
+                    cv2.putText(
+                        disp, label_str, (x1, max(thickness(15), y1 - thickness(6))),
+                        cv2.FONT_HERSHEY_SIMPLEX, max(0.35, 0.45 * ui_scale),
+                        status_color, thickness(2),
+                    )
 
                 # Overlay HUD Top Bar
-                cv2.rectangle(disp, (0, 0), (1024, 70), (20, 20, 20), -1)
-                cv2.line(disp, (0, 70), (1024, 70), status_color, 2)
+                cv2.rectangle(disp, point(0, 0), point(1023, 70), (20, 20, 20), -1)
+                cv2.line(disp, point(0, 70), point(1023, 70), status_color, thickness(2))
 
                 # Text: Level of Service badge
-                cv2.rectangle(disp, (15, 12), (90, 58), status_color, -1)
-                cv2.putText(disp, f"LOS {metrics['level_of_service']}", (22, 43), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 2)
+                cv2.rectangle(disp, point(15, 12), point(90, 58), status_color, -1)
+                cv2.putText(
+                    disp, f"LOS {metrics['level_of_service']}", point(22, 43),
+                    cv2.FONT_HERSHEY_SIMPLEX, max(0.35, 0.65 * ui_scale),
+                    (0, 0, 0), thickness(2),
+                )
 
                 # Text: Metrics with AI Confidence & Speed
                 stat_text = (
                     f"Status: {metrics['status']} | Occupancy: {metrics['occupancy_pct']}% | "
                     f"AI Conf: {metrics['avg_confidence_pct']}% | Speed: {metrics['avg_speed_kmh']} km/h"
                 )
-                cv2.putText(disp, stat_text, (105, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 2)
+                cv2.putText(
+                    disp, stat_text, point(105, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                    max(0.35, 0.52 * ui_scale), (255, 255, 255), thickness(2),
+                )
 
                 # Police Instruction
                 action_text = f"ACTION: {metrics['recommendation']}"
                 action_color = (0, 100, 255) if metrics["is_divert_recommended"] else (180, 255, 180)
-                cv2.putText(disp, action_text, (105, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.48, action_color, 2)
+                cv2.putText(
+                    disp, action_text, point(105, 55), cv2.FONT_HERSHEY_SIMPLEX,
+                    max(0.35, 0.48 * ui_scale), action_color, thickness(2),
+                )
 
                 # If diversion active, render suggested routes banner on bottom
                 if metrics["is_divert_recommended"] and latest_routes:
                     best = latest_routes[0]
-                    cv2.rectangle(disp, (0, 526), (1024, 576), (10, 35, 10), -1)
-                    cv2.line(disp, (0, 526), (1024, 526), (0, 220, 0), 2)
+                    cv2.rectangle(disp, point(0, 526), point(1023, 575), (10, 35, 10), -1)
+                    cv2.line(disp, point(0, 526), point(1023, 526), (0, 220, 0), thickness(2))
                     div_text = (
                         f"POLICE DIVERSION #{best['rank']}: {best['corridor_name']} "
                         f"({best['confidence_score']}% Conf | Saves {best['time_saved_min']}m) -> {best['vehicle_suitability']}"
                     )
-                    cv2.putText(disp, div_text, (15, 558), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (0, 255, 120), 2)
+                    cv2.putText(
+                        disp, div_text, point(15, 558), cv2.FONT_HERSHEY_SIMPLEX,
+                        max(0.35, 0.46 * ui_scale), (0, 255, 120), thickness(2),
+                    )
 
                 if writer:
                     writer.write(disp)

@@ -13,6 +13,7 @@ An AI-powered computer vision and geospatial traffic management platform designe
 - **Video-Driven Offline Road Diversion:** Traffic occupancy from the road video updates a BPR-style cost on the monitored graph segment. NetworkX ranks alternate paths and Folium exports the congested link plus recommended diversion routes to `outputs/traffic_diversion_map.html`.
 - **Interactive ROI Calibration (`tools/roi_drawer.py`):** Visual GUI allowing officers to click and outline road boundaries or pandal queues directly on video feeds.
 - **Overhead Pandal Safety & Heatmaps:** Zonal density breakdown (Barricade Queue, Darshan Sanctum, Exit Corridor), live 2D Gaussian heatmaps, and police advisory triggers.
+- **Dynamic Crowd Directives:** Exit, sanctum, and entry messages reflect current zone severity and counts, with the highest-risk active condition shown first.
 - **Built-in Synthetic Demos:** Complete out-of-the-box demo simulations (`demo-traffic` and `demo-crowd`) without needing immediate internet video downloads.
 
 ---
@@ -80,14 +81,18 @@ python run.py --mode roi --video path/to/your_pandal_video.mp4 --target crowd
 ```bash
 python run.py --mode traffic --video path/to/traffic_video.mp4 --save-output
 ```
+- Traffic detection and saved monitored video retain the input video's original resolution.
 - When severe congestion (LOS E/F) is detected, the system will compute alternate routes and save an interactive map to:
   `outputs/traffic_diversion_map.html` (open in any web browser).
 
-The supplied Maa Flyover clip has a calibrated road region and stricter
-queue threshold already configured:
+`road_traffic_2.mp4` monitors only the left-side roadway, excluding opposing
+traffic beyond the median. The other sample clips use full-frame monitoring
+because their camera views differ:
 
 ```bash
-python run.py --mode traffic --video "data/sample_videos/Traffic Congestions 1_Gemini generated.mp4" --save-output
+python run.py --mode traffic --video "data/sample_videos/road_traffic_1.mp4" --save-output
+python run.py --mode traffic --video "data/sample_videos/road_traffic_2.mp4" --save-output
+python run.py --mode traffic --video "data/sample_videos/road_traffic_3.mp4" --save-output
 ```
 
 ### Step 3: Run Pandal Crowd Safety Monitor

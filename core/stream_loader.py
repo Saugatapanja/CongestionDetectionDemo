@@ -14,8 +14,8 @@ class VideoStreamLoader:
     def __init__(
         self,
         source: str,
-        target_width: int = 1024,
-        target_height: int = 576,
+        target_width: Optional[int] = 1024,
+        target_height: Optional[int] = 576,
         frame_stride: int = 1,
         loop: bool = True,
     ):
@@ -23,12 +23,14 @@ class VideoStreamLoader:
 
         Args:
             source: Path to video file or RTSP URL or integer for webcam.
-            target_width: Rescaled width for CPU performance and display.
-            target_height: Rescaled height.
+            target_width: Rescaled width, or None with target_height to preserve source size.
+            target_height: Rescaled height, or None with target_width to preserve source size.
             frame_stride: Process every Nth frame (e.g., 2 skips alternate frames).
             loop: Whether to loop the video upon reaching the end.
         """
         self.source = source
+        if (target_width is None) != (target_height is None):
+            raise ValueError("target_width and target_height must both be set or both be None")
         self.target_width = target_width
         self.target_height = target_height
         self.frame_stride = max(1, frame_stride)
@@ -42,6 +44,12 @@ class VideoStreamLoader:
         if not self.cap.isOpened():
             raise ValueError(f"Unable to open video stream at: {source}")
 
+        self.source_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.source_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if target_width is None and (self.source_width <= 0 or self.source_height <= 0):
+            self.cap.release()
+            raise ValueError(f"Unable to determine source resolution for: {source}")
+
         self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 25.0
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.current_frame_idx = 0
@@ -51,10 +59,13 @@ class VideoStreamLoader:
         self._measured_fps = self.fps
 
     def get_resolution(self) -> Tuple[int, int]:
-        return (self.target_width, self.target_height)
+        if self.target_width is None:
+            return self.source_width, self.source_height
+        assert self.target_height is not None
+        return self.target_width, self.target_height
 
     def frames(self) -> Generator[Tuple[int, np.ndarray, float], None, None]:
-        """Yield (source frame index, resized frame, measured processing FPS)."""
+        """Yield (source frame index, frame, measured processing FPS)."""
         while True:
             # Fast-skip intermediate frames with grab() to save CPU decoding
             for _ in range(self.frame_stride - 1):
@@ -79,7 +90,7 @@ class VideoStreamLoader:
             self.current_frame_idx += 1
 
             # Resize frame for uniform display and CPU efficiency
-            if self.target_width and self.target_height:
+            if self.target_width is not None and self.target_height is not None:
                 frame = cv2.resize(frame, (self.target_width, self.target_height))
 
             # FPS calculation
