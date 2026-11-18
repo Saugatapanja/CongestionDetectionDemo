@@ -185,6 +185,10 @@ def generate_traffic_stream() -> Generator[bytes, None, None]:
         road_roi = np.array(road_roi_list, dtype=np.int32)
 
     effective_cfg = {**t_cfg, **profile_overrides}
+    roi_color_override = tuple(effective_cfg["roi_color"]) if "roi_color" in effective_cfg else None
+    box_color_override = tuple(effective_cfg["box_color"]) if "box_color" in effective_cfg else None
+    roi_thickness_cfg = effective_cfg.get("roi_thickness")
+    box_thickness_cfg = effective_cfg.get("box_thickness")
     detector = state.vehicle_detector
     detector.confidence = effective_cfg.get("confidence_threshold", 0.35)
     recommender = state.route_recommender
@@ -264,17 +268,24 @@ def generate_traffic_stream() -> Generator[bytes, None, None]:
             # Render visuals
             disp = frame.copy()
             status_color = metrics["status_color"]
+            roi_draw_color = roi_color_override or status_color
+            box_draw_color = box_color_override or status_color
 
-            # If not full frame, draw the ROI polygon border
+            # Adaptive bold boundary thickness (or custom config override)
+            roi_th = int(roi_thickness_cfg) if roi_thickness_cfg else max(5, round(frame.shape[1] / 250))
+            box_th = int(box_thickness_cfg) if box_thickness_cfg else max(3, round(frame.shape[1] / 400))
+            font_scale = max(0.45, 0.55 * (frame.shape[1] / 1024.0))
+
+            # If not full frame, draw the ROI polygon border bold
             if use_calibrated_roi:
-                cv2.polylines(disp, [meter.road_roi], True, status_color, 3)
+                cv2.polylines(disp, [meter.road_roi], True, roi_draw_color, roi_th)
 
             for i, (box, lbl) in enumerate(zip(roi_boxes, roi_lbls)):
                 x1, y1, x2, y2 = box
                 conf_val = roi_confs[i] if i < len(roi_confs) else 0.85
-                cv2.rectangle(disp, (x1, y1), (x2, y2), status_color, 2)
+                cv2.rectangle(disp, (x1, y1), (x2, y2), box_draw_color, box_th)
                 label_txt = f"{lbl} {int(conf_val * 100)}%"
-                cv2.putText(disp, label_txt, (x1, max(15, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.42, status_color, 2)
+                cv2.putText(disp, label_txt, (x1, max(20, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, box_draw_color, max(2, box_th - 1))
 
             ret, buffer = cv2.imencode(".jpg", disp, [cv2.IMWRITE_JPEG_QUALITY, 75])
             if ret:

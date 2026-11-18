@@ -81,6 +81,10 @@ def run_traffic_module(
 
     road_roi, profile_overrides = traffic_roi(zones, video_source, loader.get_resolution())
     effective_cfg = {**t_cfg, **profile_overrides}
+    roi_color_override = tuple(effective_cfg["roi_color"]) if "roi_color" in effective_cfg else None
+    box_color_override = tuple(effective_cfg["box_color"]) if "box_color" in effective_cfg else None
+    roi_thickness_cfg = effective_cfg.get("roi_thickness")
+    box_thickness_cfg = effective_cfg.get("box_thickness")
     detector = VehicleDetector(
         model_name=t_cfg.get("model_name", "yolov8n.pt"),
         confidence=effective_cfg.get("confidence_threshold", 0.35),
@@ -172,20 +176,25 @@ def run_traffic_module(
                 point = lambda x, y: (round(x * scale_x), round(y * scale_y))
                 thickness = lambda value: max(1, round(value * ui_scale))
 
-                # Draw Road ROI
+                # Draw Road ROI (bold boundary)
                 status_color = metrics["status_color"]
-                cv2.polylines(disp, [meter.road_roi], True, status_color, thickness(3))
+                roi_draw_color = roi_color_override or status_color
+                box_draw_color = box_color_override or status_color
+                roi_th = int(roi_thickness_cfg) if roi_thickness_cfg else max(5, thickness(5))
+                box_th = int(box_thickness_cfg) if box_thickness_cfg else max(3, thickness(3))
 
-                # Draw Vehicles with Confidence Scores & Speeds
+                cv2.polylines(disp, [meter.road_roi], True, roi_draw_color, roi_th)
+
+                # Draw Vehicles with Confidence Scores & Speeds (bold boxes & labels)
                 for i, (box, lbl) in enumerate(zip(roi_boxes, roi_lbls)):
                     x1, y1, x2, y2 = box
                     conf = roi_confs[i] if i < len(roi_confs) else 0.85
-                    cv2.rectangle(disp, (x1, y1), (x2, y2), status_color, thickness(2))
+                    cv2.rectangle(disp, (x1, y1), (x2, y2), box_draw_color, box_th)
                     label_str = f"{lbl} {int(conf * 100)}%"
                     cv2.putText(
-                        disp, label_str, (x1, max(thickness(15), y1 - thickness(6))),
-                        cv2.FONT_HERSHEY_SIMPLEX, max(0.35, 0.45 * ui_scale),
-                        status_color, thickness(2),
+                        disp, label_str, (x1, max(thickness(18), y1 - thickness(6))),
+                        cv2.FONT_HERSHEY_SIMPLEX, max(0.40, 0.55 * ui_scale),
+                        box_draw_color, max(2, box_th - 1),
                     )
 
                 # Overlay HUD Top Bar

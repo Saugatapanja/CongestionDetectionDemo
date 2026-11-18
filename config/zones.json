@@ -47,10 +47,36 @@
   "video_profiles": {
     "traffic": [
       {
+        "filename": "road_traffic_1.mp4",
+        "reference_size": [1080, 1920],
+        "road_roi": [
+          [0, 800],
+          [1080, 800],
+          [1080, 1920],
+          [0, 1920]
+        ],
+        "overrides": {
+          "roi_color": [0, 255, 0],
+          "box_color": [0, 255, 255],
+          "roi_thickness": 6,
+          "box_thickness": 4
+        }
+      },
+      {
         "filename": "road_traffic_2.mp4",
-        "reference_size": [478, 850],
-        "road_roi": [[0, 150], [409, 150], [355, 849], [0, 849]],
-        "overrides": {}
+        "reference_size": [1920, 1080],
+        "road_roi": [
+          [655, 400],
+          [1170, 400],
+          [1100, 1025],
+          [655, 1025]
+        ],
+        "overrides": {
+          "roi_color": [0, 255, 0],
+          "box_color": [0, 255, 255],
+          "roi_thickness": 6,
+          "box_thickness": 4
+        }
       }
     ],
     "crowd": [
