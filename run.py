@@ -291,7 +291,7 @@ def run_crowd_module(
     zones_list, profile_overrides = crowd_zones(zones, video_source, loader.get_resolution())
     effective_cfg = {**c_cfg, **profile_overrides}
     detector = OverheadCrowdDetector(
-        model_name=c_cfg.get("model_name", "yolov8n.pt"),
+        model_name=c_cfg.get("model_name", "yolov8n_head.pt"),
         confidence=effective_cfg.get("confidence_threshold", 0.25),
         imgsz=effective_cfg.get("inference_size", 960),
     )
@@ -361,7 +361,9 @@ def run_crowd_module(
                     label = f"{z['name']}: {z['head_count']} ({z['density_per_m2']} p/m2)"
                     cv2.putText(disp, label, (cx - 70, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 2)
 
-                # Draw head markers
+                # Draw head bounding boxes and markers
+                for bx1, by1, bx2, by2 in boxes:
+                    cv2.rectangle(disp, (bx1, by1), (bx2, by2), (0, 255, 255), 1)
                 for cx, cy in head_centroids:
                     cv2.circle(disp, (cx, cy), 3, (0, 255, 255), -1)
 

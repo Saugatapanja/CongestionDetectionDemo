@@ -20,8 +20,9 @@ def test_traffic_video_profiles_for_sample_videos():
     profile2 = profile_for_video(zones, "traffic", "road_traffic_2.mp4")
     assert profile2 is not None
     roi2, overrides2 = traffic_roi(zones, "road_traffic_2.mp4", (1920, 1080))
-    assert roi2 == [[650, 150], [880, 150], [880, 1080], [650, 1080]]
-    assert overrides2 == {}
+    assert roi2 == [[655, 400], [1170, 400], [1100, 1025], [655, 1025]]
+    assert overrides2.get("roi_thickness") == 6
+    assert overrides2.get("box_thickness") == 4
 
     # 3. Unprofiled video falls back to default traffic ROI scaled to frame size
     unprofiled = "road_traffic_3.mp4"

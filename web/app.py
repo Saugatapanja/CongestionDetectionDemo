@@ -89,9 +89,9 @@ class AppState:
             target_classes=t_cfg.get("target_classes", [2, 3, 5, 7]),
         )
         self.crowd_detector = OverheadCrowdDetector(
-            model_name=c_cfg.get("model_name", "yolov8n.pt"),
+            model_name=c_cfg.get("model_name", "yolov8n_head.pt"),
             confidence=c_cfg.get("confidence_threshold", 0.25),
-            imgsz=c_cfg.get("inference_size", 960),
+            imgsz=c_cfg.get("inference_size", 640),
         )
         self.route_recommender = RouteRecommender(city_name="Kolkata, India")
 
@@ -343,6 +343,7 @@ def generate_crowd_stream() -> Generator[bytes, None, None]:
                 if any(cv2.pointPolygonTest(poly, point, False) >= 0 for poly in zone_polygons)
             ]
             head_centroids = [head_centroids[i] for i in in_zone]
+            boxes = [boxes[i] for i in in_zone]
             confs = [confs[i] for i in in_zone]
             zone_stats = analyzer.analyze_zones(head_centroids)
             heatmap_frame = analyzer.generate_heatmap_overlay(frame, head_centroids)
@@ -392,6 +393,11 @@ def generate_crowd_stream() -> Generator[bytes, None, None]:
                 cx = int(np.mean(poly[:, 0]))
                 cy = int(np.mean(poly[:, 1]))
                 cv2.putText(disp, f"{z['name']}: {z['density_per_m2']} p/m2", (cx - 60, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 2)
+
+            # Draw actual head bounding boxes and centroid markers
+            for box in boxes:
+                bx1, by1, bx2, by2 = box
+                cv2.rectangle(disp, (bx1, by1), (bx2, by2), (0, 255, 255), 1)
 
             for cx, cy in head_centroids:
                 cv2.circle(disp, (cx, cy), 3, (0, 255, 255), -1)

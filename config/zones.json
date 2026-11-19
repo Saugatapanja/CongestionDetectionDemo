@@ -81,7 +81,7 @@
     ],
     "crowd": [
       {
-        "filename": "Durga Puja Pandal Overcrowded_Gemini generated.mp4",
+        "filename": "Durga Puja Pandal Overcrowded.mp4",
         "reference_size": [1024, 576],
         "overrides": {
           "smoothing_window": 5,
@@ -95,7 +95,7 @@
             "area_sq_meters": 18.0,
             "warning_count": 8,
             "critical_count": 12,
-            "polygon": [[45, 285], [355, 285], [355, 575], [45, 575]]
+            "polygon": [[240, 285], [509, 285], [509, 575], [240, 575]]
           },
           {
             "id": "main_sanctum",
@@ -103,7 +103,7 @@
             "area_sq_meters": 22.0,
             "warning_count": 6,
             "critical_count": 10,
-            "polygon": [[355, 285], [690, 285], [690, 575], [355, 575]]
+            "polygon": [[400, 170], [600, 170], [600, 285], [400, 285]]
           },
           {
             "id": "exit_corridor",
@@ -111,7 +111,7 @@
             "area_sq_meters": 20.0,
             "warning_count": 8,
             "critical_count": 12,
-            "polygon": [[690, 285], [920, 285], [920, 575], [690, 575]]
+            "polygon": [[513, 285], [780, 285], [780, 575], [513, 575]]
           }
         ]
       }
